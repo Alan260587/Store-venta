@@ -1,0 +1,6 @@
+{
+  "name": "Sheló NABEL - Tienda & Catálogos PDF",
+  "description": "Tienda en línea de productos naturales Sheló NABEL, compras por WhatsApp y centro de descargas de catálogos PDF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
