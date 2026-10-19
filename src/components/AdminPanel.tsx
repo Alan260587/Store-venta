@@ -27,7 +27,7 @@ import {
   UserCheck,
   ArrowRight
 } from 'lucide-react';
-import { Product, PdfDocument } from '../types';
+import { Product, PdfDocument, MultiUserPresence } from '../types';
 import { countPdfPages } from '../utils/pdfParser';
 import { pdfFileStore } from '../services/pdfFileStore';
 import { generateRandomDownloadKey } from '../services/dbStorage';
@@ -36,6 +36,7 @@ import { generateAdminManualPdf } from '../utils/generateManualPdf';
 interface AdminPanelProps {
   products: Product[];
   pdfs: PdfDocument[];
+  presence?: MultiUserPresence;
   onOpenAddProduct: () => void;
   onOpenAddPdf: () => void;
   onAddPdfDirect?: (pdfData: Omit<PdfDocument, 'id' | 'uploadedAt'>) => { success: boolean; message: string; pdf?: PdfDocument };
@@ -61,6 +62,7 @@ interface StagedInlinePdf {
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   products,
   pdfs,
+  presence,
   onOpenAddProduct,
   onOpenAddPdf,
   onAddPdfDirect,
@@ -327,9 +329,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <span className="bg-amber-400/20 text-amber-300 text-[10px] font-mono uppercase font-bold px-2 py-0.5 rounded border border-amber-500/30">
                 Clave **** Activa
               </span>
+              <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                Multiusuario: {presence?.totalOnline || 1} en línea ({presence?.clientsOnline ?? 0} clientes normales)
+              </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Sube de 1 a 10 PDFs a la vez, <strong>modifica sus títulos al guardar</strong>, consulta las <strong>Claves de Descarga</strong> y descarga el <strong>Instructivo en PDF</strong>.
+              Sube de 1 a 10 PDFs a la vez, <strong>modifica sus títulos al guardar</strong>, consulta las <strong>Claves de Descarga</strong> y descarga el <strong>Instructivo en PDF</strong>. Los demás usuarios permanecen en modo normal y tu sesión se cierra automáticamente al cerrar la página.
             </p>
           </div>
         </div>

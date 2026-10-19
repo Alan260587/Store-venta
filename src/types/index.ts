@@ -27,6 +27,19 @@ export interface Product {
   availableColors?: ProductColorOption[];
 }
 
+export interface PdfDocument {
+  id: string;
+  title: string;
+  description: string;
+  pagesCount: number;
+  price: number; // 0 for Gratis, 20 for $20 MXN
+  downloadKey?: string; // Unique key visible to Admin and required for Client download
+  uploadedAt: string;
+  fileSize: string;
+  fileData?: string;
+  category?: string;
+}
+
 export interface CartItem {
   cartItemKey?: string;
   product: Product;
@@ -34,15 +47,8 @@ export interface CartItem {
   selectedColor?: string;
 }
 
-export interface PdfDocument {
-  id: string;
-  title: string;
-  description: string;
-  pagesCount: number;
-  price: number; // 0 for Gratis or 20 for $20 MXN
-  downloadKey: string; // Clave de descarga visible solo para el administrador
-  fileSize?: string;
-  fileData?: string;
-  uploadedAt: string;
-  category?: string;
+export interface MultiUserPresence {
+  totalOnline: number;
+  adminsOnline: number;
+  clientsOnline: number;
 }

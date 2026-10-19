@@ -1,5 +1,6 @@
 import React from 'react';
-import { ShoppingBag, FileText, Shield, MessageCircle, Leaf } from 'lucide-react';
+import { ShoppingBag, FileText, Shield, MessageCircle, Leaf, Users } from 'lucide-react';
+import { MultiUserPresence } from '../types';
 
 interface NavbarProps {
   activeTab: 'catalog' | 'pdfs' | 'admin';
@@ -8,6 +9,7 @@ interface NavbarProps {
   openCart: () => void;
   isAdminUnlocked: boolean;
   openAdminModal: () => void;
+  presence?: MultiUserPresence;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -17,14 +19,26 @@ export const Navbar: React.FC<NavbarProps> = ({
   openCart,
   isAdminUnlocked,
   openAdminModal,
+  presence,
 }) => {
+  const totalOnline = presence?.totalOnline || 1;
+
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-emerald-100 shadow-sm">
       {/* Top Banner */}
-      <div className="bg-emerald-800 text-white text-xs sm:text-sm py-1.5 px-4 text-center font-medium flex items-center justify-center gap-2">
-        <Leaf className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
-        <span>Sheló NABEL — ¡La belleza a tu alcance en armonía con la naturaleza!</span>
-        <span className="hidden md:inline text-emerald-200">| Envíos e informes vía WhatsApp: +52 662 139 5110</span>
+      <div className="bg-emerald-800 text-white text-xs sm:text-sm py-1.5 px-4 text-center font-medium flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5">
+          <Leaf className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+          <span>Sheló NABEL — ¡La belleza a tu alcance en armonía con la naturaleza!</span>
+        </div>
+        <span className="hidden md:inline text-emerald-200">| WhatsApp: +52 662 139 5110</span>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-900/90 border border-emerald-600 text-[11px] text-emerald-100 font-semibold">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <Users className="w-3 h-3 text-emerald-300" />
+          <span>
+            {totalOnline} {totalOnline === 1 ? 'usuario conectado' : 'usuarios conectados'}
+          </span>
+        </span>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -91,9 +105,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? 'bg-amber-100 text-amber-900 hover:bg-amber-200'
                   : 'text-slate-700 hover:bg-emerald-100/60'
               }`}
+              title={
+                isAdminUnlocked
+                  ? 'Ir al Panel de Administrador'
+                  : 'Requiere ingresar la Clave de Administrador (****)'
+              }
             >
               <Shield className="w-4 h-4" />
-              {isAdminUnlocked ? 'Panel Admin' : 'Área Admin'}
+              {isAdminUnlocked ? 'Panel Admin (Activo)' : 'Área Admin (Clave ****)'}
             </button>
           </nav>
 
@@ -159,7 +178,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <Shield className="w-3.5 h-3.5" />
-            Admin
+            Admin (****)
           </button>
         </div>
 

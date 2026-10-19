@@ -1,6 +1,7 @@
 /**
- * IndexedDB storage for actual PDF File/Blob binary data.
- * Designed with strict timeouts and abort handlers so it NEVER blocks or hangs PDF uploads.
+ * Multi-user & local IndexedDB storage for actual PDF File/Blob binary data.
+ * Saves locally to IndexedDB AND uploads to /api/pdf-file/:id in the background
+ * so any connected user can download the exact uploaded PDF using their downloadKey.
  */
 
 const DB_NAME = 'shelo_nabel_pdf_blobs_db';
@@ -51,11 +52,20 @@ export const pdfFileStore = {
     try {
       // Read into an ArrayBuffer first so stale File references from <input> never abort IndexedDB
       const bufferPromise = file.arrayBuffer();
-      const timeoutBuffer = new Promise<null>((r) => setTimeout(() => r(null), 1500));
+      const timeoutBuffer = new Promise<null>((r) => setTimeout(() => r(null), 2000));
       const buffer = await Promise.race([bufferPromise, timeoutBuffer]);
       if (!buffer) return;
 
       const safeBlob = new Blob([buffer], { type: 'application/pdf' });
+
+      // 1. Upload to multi-user backend server in background so other users can download it too
+      void fetch(`/api/pdf-file/${encodeURIComponent(pdfId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: safeBlob
+      }).catch(() => {});
+
+      // 2. Also store in local IndexedDB for instant offline/local retrieval
       const db = await openDb();
       if (!db) return;
 
@@ -91,46 +101,62 @@ export const pdfFileStore = {
         }
       });
     } catch (e) {
-      console.warn('Non-fatal note saving PDF blob to IndexedDB:', e);
+      console.warn('Non-fatal note saving PDF blob:', e);
     }
   },
 
   async getFileUrl(pdfId: string): Promise<string | null> {
     try {
+      // 1. Check local IndexedDB first
       const db = await openDb();
-      if (!db) return null;
-
-      return await new Promise<string | null>((resolve) => {
-        const timer = setTimeout(() => {
-          try { db.close(); } catch {}
-          resolve(null);
-        }, 1000);
-
-        try {
-          const tx = db.transaction(STORE_NAME, 'readonly');
-          const store = tx.objectStore(STORE_NAME);
-          const req = store.get(pdfId);
-          req.onsuccess = () => {
-            clearTimeout(timer);
+      if (db) {
+        const localUrl = await new Promise<string | null>((resolve) => {
+          const timer = setTimeout(() => {
             try { db.close(); } catch {}
-            if (req.result instanceof Blob) {
-              const url = URL.createObjectURL(req.result);
-              resolve(url);
-            } else {
+            resolve(null);
+          }, 1000);
+
+          try {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.get(pdfId);
+            req.onsuccess = () => {
+              clearTimeout(timer);
+              try { db.close(); } catch {}
+              if (req.result instanceof Blob) {
+                const url = URL.createObjectURL(req.result);
+                resolve(url);
+              } else {
+                resolve(null);
+              }
+            };
+            req.onerror = () => {
+              clearTimeout(timer);
+              try { db.close(); } catch {}
               resolve(null);
-            }
-          };
-          req.onerror = () => {
+            };
+          } catch {
             clearTimeout(timer);
             try { db.close(); } catch {}
             resolve(null);
-          };
-        } catch {
-          clearTimeout(timer);
-          try { db.close(); } catch {}
-          resolve(null);
+          }
+        });
+
+        if (localUrl) {
+          return localUrl;
         }
-      });
+      }
+
+      // 2. Fallback: Check multi-user backend server for PDF uploaded by the Administrator
+      const response = await fetch(`/api/pdf-file/${encodeURIComponent(pdfId)}`);
+      if (response.ok) {
+        const serverBlob = await response.blob();
+        if (serverBlob && serverBlob.size > 0) {
+          return URL.createObjectURL(serverBlob);
+        }
+      }
+
+      return null;
     } catch {
       return null;
     }

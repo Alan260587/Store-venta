@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, Lock, KeyRound, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Shield, Lock, KeyRound, X, AlertCircle, CheckCircle2, Users } from 'lucide-react';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -24,7 +24,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
       setPassword('');
       onSuccess();
     } else {
-      setError('Clave incorrecta. Por favor verifica e intenta nuevamente.');
+      setError('Clave de administrador incorrecta. Los usuarios sin clave permanecen en vista normal de cliente.');
     }
   };
 
@@ -48,22 +48,22 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           <X className="w-5 h-5" />
         </button>
 
-        <div className="text-center mb-6">
+        <div className="text-center mb-5">
           <div className="w-14 h-14 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner border border-amber-200">
             <Shield className="w-7 h-7" />
           </div>
           <h3 className="font-serif font-bold text-xl text-slate-900">
-            Acceso Total de Administrador
+            Conexión Exclusiva con Clave Admin
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Ingresa la clave de seguridad para habilitar la subida y edición de PDFs, ver claves de descarga y administrar artículos.
+            Conéctate únicamente ingresando tu clave de administrador. Los demás usuarios conectados continúan en modo cliente normal.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              Clave de Seguridad (4 dígitos)
+              Clave de Administrador
             </label>
             <div className="relative">
               <Lock className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -93,18 +93,31 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             </div>
           )}
 
-          <div className="pt-2">
+          <div className="pt-1">
             <button
               type="submit"
               className="w-full py-3.5 px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md hover:shadow-amber-500/20 transition-all flex items-center justify-center gap-2 text-sm active:scale-98"
             >
               <KeyRound className="w-4 h-4" />
-              <span>Desbloquear Acceso Total</span>
+              <span>Conectarme como Administrador</span>
             </button>
           </div>
         </form>
 
-        <div className="mt-6 text-center text-[11px] text-slate-400 border-t border-slate-100 pt-4 flex items-center justify-center gap-1.5">
+        <div className="mt-5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5 text-[11px] text-slate-600">
+          <div className="flex items-center gap-1.5 font-bold text-slate-800">
+            <Users className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span>Modo Multiusuario y Cierre Automático:</span>
+          </div>
+          <p className="leading-relaxed">
+            • Tu sesión de Administrador se activa <strong>únicamente en tu navegador</strong>; a los demás usuarios les pedirá la clave si intentan entrar a Admin.
+          </p>
+          <p className="leading-relaxed">
+            • <strong>Al cerrar la página o pestaña</strong>, tu sesión de Administrador se cierra automáticamente por seguridad.
+          </p>
+        </div>
+
+        <div className="mt-4 text-center text-[11px] text-slate-400 border-t border-slate-100 pt-3 flex items-center justify-center gap-1.5">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
           <span>Acceso seguro protegido Sheló NABEL</span>
         </div>

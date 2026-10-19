@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Product, PdfDocument, CartItem } from './types';
+import { Product, PdfDocument, CartItem, MultiUserPresence } from './types';
 import { dbStorage } from './services/dbStorage';
 import { pdfFileStore } from './services/pdfFileStore';
 import { Navbar } from './components/Navbar';
@@ -12,20 +12,29 @@ import { AdminPanel } from './components/AdminPanel';
 import { AddProductModal } from './components/AddProductModal';
 import { AddPdfModal } from './components/AddPdfModal';
 import { Footer } from './components/Footer';
-import { ShieldCheck, Lock } from 'lucide-react';
+import { ShieldCheck, Lock, Users } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'catalog' | 'pdfs' | 'admin'>('catalog');
   
-  // Database State
-  const [products, setProducts] = useState<Product[]>([]);
-  const [pdfs, setPdfs] = useState<PdfDocument[]>([]);
+  // Database State (preserved across reloads & synced across multiple users)
+  const [products, setProducts] = useState<Product[]>(() => dbStorage.getProducts());
+  const [pdfs, setPdfs] = useState<PdfDocument[]>(() => dbStorage.getPdfs());
 
-  // Cart State
+  // Multi-user presence state
+  const [presence, setPresence] = useState<MultiUserPresence>({
+    totalOnline: 1,
+    adminsOnline: 0,
+    clientsOnline: 1
+  });
+
+  // Cart State (isolated per user)
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
 
-  // Admin Access State (Persistent across reload)
+  // Admin Access State: Strictly isolated to THIS user's tab session (sessionStorage)
+  // Other connected users remain normal clients unless they enter the Admin Key (****).
+  // Automatically closes session when closing the page.
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => dbStorage.isAdminUnlocked());
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
 
@@ -33,13 +42,110 @@ export default function App() {
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState<boolean>(false);
   const [isAddPdfModalOpen, setIsAddPdfModalOpen] = useState<boolean>(false);
 
-  // Load Initial Data from storage
+  // 1. Non-destructively sync local PDFs & Products with Multi-User Server on mount
+  // and subscribe to real-time updates via Server-Sent Events (SSE)
   useEffect(() => {
-    setProducts(dbStorage.getProducts());
-    setPdfs(dbStorage.getPdfs());
+    let isMounted = true;
+    const clientId = dbStorage.getSessionClientId();
+    const initialRole = dbStorage.isAdminUnlocked() ? 'admin' : 'client';
+
+    // Merge local storage with server so nothing added previously is ever removed
+    void dbStorage.syncWithServer().then((synced) => {
+      if (!isMounted || !synced) return;
+      setProducts(synced.products);
+      setPdfs(synced.pdfs);
+      if (synced.presence) {
+        setPresence(synced.presence);
+      }
+    });
+
+    // Connect to real-time multi-user event stream
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(
+        `/api/events?clientId=${encodeURIComponent(clientId)}&role=${encodeURIComponent(initialRole)}`
+      );
+
+      eventSource.addEventListener('init', (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.presence && isMounted) {
+            setPresence(data.presence);
+          }
+        } catch {
+          // ignore parse errors
+        }
+      });
+
+      eventSource.addEventListener('presence:update', (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (isMounted && data) {
+            setPresence(data);
+          }
+        } catch {
+          // ignore
+        }
+      });
+
+      eventSource.addEventListener('state:update', (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (!isMounted) return;
+          if (Array.isArray(data.products) && data.products.length > 0) {
+            dbStorage.saveProductsLocalOnly(data.products);
+            setProducts(dbStorage.getProducts());
+          }
+          if (Array.isArray(data.pdfs) && data.pdfs.length > 0) {
+            dbStorage.savePdfsLocalOnly(data.pdfs);
+            setPdfs(dbStorage.getPdfs());
+          }
+          if (data.presence) {
+            setPresence(data.presence);
+          }
+        } catch {
+          // ignore
+        }
+      });
+    } catch {
+      // Fallback if SSE is unavailable
+    }
+
+    return () => {
+      isMounted = false;
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
   }, []);
 
-  // Sync admin state
+  // 2. Automatic Admin Session Logout when closing the page/tab
+  useEffect(() => {
+    const clientId = dbStorage.getSessionClientId();
+
+    const handlePageCloseAutoLogout = () => {
+      try {
+        // Clear admin session from sessionStorage & localStorage upon closing the page
+        sessionStorage.removeItem('shelo_admin_session_active_v2');
+        localStorage.removeItem('shelo_admin_unlocked_v1');
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(`/api/admin-logout?clientId=${encodeURIComponent(clientId)}`);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageCloseAutoLogout);
+    window.addEventListener('beforeunload', handlePageCloseAutoLogout);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageCloseAutoLogout);
+      window.removeEventListener('beforeunload', handlePageCloseAutoLogout);
+    };
+  }, []);
+
+  // Unlock Admin ONLY for this current user session using the Admin Key (****)
   const handleUnlockAdmin = () => {
     dbStorage.setAdminUnlocked(true);
     setIsAdminUnlocked(true);
@@ -137,7 +243,7 @@ export default function App() {
 
   const handleDeletePdf = (id: string) => {
     dbStorage.deletePdf(id);
-    pdfFileStore.deleteFile(id);
+    void pdfFileStore.deleteFile(id);
     setPdfs(dbStorage.getPdfs());
   };
 
@@ -152,16 +258,23 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 antialiased selection:bg-emerald-200 selection:text-emerald-900">
       
-      {/* Top Admin Active Banner if unlocked */}
+      {/* Top Admin Active Banner if unlocked ONLY on this session */}
       {isAdminUnlocked && (
         <div className="bg-amber-500 text-slate-950 px-4 py-1.5 text-xs font-bold flex items-center justify-between shadow-sm z-50">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-slate-950" />
-            <span>Acceso Total Administrador Activo (Clave ****)</span>
-            <span className="hidden sm:inline font-normal text-slate-900">— Puedes subir PDFs, modificar títulos, ver claves de descarga y administrar productos</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <ShieldCheck className="w-4 h-4 text-slate-950 shrink-0" />
+            <span>Sesión de Administrador Activa (Clave ****)</span>
+            <span className="hidden md:inline font-normal text-slate-900">
+              — Los demás usuarios conectados ven la tienda normal de cliente. Al cerrar la página tu sesión se cierra automáticamente.
+            </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 bg-slate-950/15 text-slate-950 rounded-md text-[11px] font-bold">
+              <Users className="w-3 h-3" />
+              <span>{presence.totalOnline} {presence.totalOnline === 1 ? 'usuario' : 'usuarios'} en línea</span>
+            </span>
+
             {activeTab !== 'admin' && (
               <button
                 type="button"
@@ -174,11 +287,11 @@ export default function App() {
             <button
               type="button"
               onClick={handleLockAdmin}
-              className="p-1 hover:bg-amber-600 rounded text-slate-950 flex items-center gap-1 text-[11px]"
-              title="Cerrar sesión de administrador"
+              className="px-2 py-0.5 bg-red-700 text-white hover:bg-red-800 rounded text-[11px] flex items-center gap-1 font-bold"
+              title="Cerrar sesión de administrador ahora"
             >
-              <Lock className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Bloquear</span>
+              <Lock className="w-3 h-3" />
+              <span>Cerrar Sesión</span>
             </button>
           </div>
         </div>
@@ -198,6 +311,7 @@ export default function App() {
         openCart={() => setIsCartOpen(true)}
         isAdminUnlocked={isAdminUnlocked}
         openAdminModal={() => setIsAdminModalOpen(true)}
+        presence={presence}
       />
 
       {/* Main View Content */}
@@ -249,6 +363,7 @@ export default function App() {
           <AdminPanel
             products={products}
             pdfs={pdfs}
+            presence={presence}
             onOpenAddProduct={() => setIsAddProductModalOpen(true)}
             onOpenAddPdf={() => setIsAddPdfModalOpen(true)}
             onAddPdfDirect={handleAddPdf}
@@ -274,7 +389,7 @@ export default function App() {
         onClearCart={handleClearCart}
       />
 
-      {/* Admin Passcode Modal (****) */}
+      {/* Admin Passcode Modal (Connects ONLY with Admin Key ****) */}
       <AdminLoginModal
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}

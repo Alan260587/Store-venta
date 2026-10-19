@@ -1,10 +1,12 @@
-import { Product, PdfDocument } from '../types';
+import { Product, PdfDocument, MultiUserPresence } from '../types';
 import { INITIAL_PRODUCTS } from '../data/initialProducts';
 import { INITIAL_PDFS } from '../data/initialPdfs';
 
 const PRODUCTS_KEY = 'shelo_nabel_products_v4';
 const PDFS_KEY = 'shelo_nabel_pdfs_v4';
-const ADMIN_KEY = 'shelo_admin_unlocked_v1';
+const LEGACY_ADMIN_LOCAL_KEY = 'shelo_admin_unlocked_v1';
+const ADMIN_SESSION_KEY = 'shelo_admin_session_active_v2';
+const CLIENT_SESSION_ID_KEY = 'shelo_multiuser_client_id_v1';
 const MAX_PDF_LIMIT = 500;
 
 export function generateRandomDownloadKey(): string {
@@ -12,7 +14,83 @@ export function generateRandomDownloadKey(): string {
   return `SN-${num}`;
 }
 
+function normalizeProductsList(parsed: Product[]): { normalized: Product[]; updatedFlag: boolean } {
+  const defaultFolders = INITIAL_PRODUCTS.find(p => p.id === 'school-01');
+  const defaultScissors = INITIAL_PRODUCTS.find(p => p.id === 'school-02');
+  const defaultCrayons = INITIAL_PRODUCTS.find(p => p.id === 'school-03');
+  let updatedFlag = false;
+
+  const normalized = parsed.map(p => {
+    if (p.id === 'school-01' || p.clave === 'ESC-01') {
+      if (p.name.toLowerCase().includes('cuaderno') || !p.availableColors || p.availableColors.length === 0) {
+        updatedFlag = true;
+        return {
+          ...p,
+          name: defaultFolders?.name || 'Folders Escolares',
+          description: defaultFolders?.description || p.description,
+          availableColors: defaultFolders?.availableColors
+        };
+      }
+    }
+    if ((p.id === 'school-02' || p.clave === 'ESC-02') && defaultScissors) {
+      if (p.image.startsWith('data:image/svg+xml') && p.image !== defaultScissors.image) {
+        updatedFlag = true;
+        return {
+          ...p,
+          image: defaultScissors.image
+        };
+      }
+    }
+    if ((p.id === 'school-03' || p.clave === 'ESC-03') && defaultCrayons) {
+      if (p.image.startsWith('data:image/svg+xml') && p.image !== defaultCrayons.image) {
+        updatedFlag = true;
+        return {
+          ...p,
+          image: defaultCrayons.image
+        };
+      }
+    }
+    return p;
+  });
+
+  return { normalized, updatedFlag };
+}
+
+function pushStateToServer(payload: {
+  products?: Product[];
+  pdfs?: PdfDocument[];
+  deletedProductId?: string;
+  deletedPdfId?: string;
+}) {
+  try {
+    void fetch('/api/update-state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => {});
+  } catch {
+    // ignore offline/network errors
+  }
+}
+
 export const dbStorage = {
+  /**
+   * Returns a unique per-tab session ID so each connected user or browser tab
+   * is tracked independently in multi-user mode.
+   */
+  getSessionClientId(): string {
+    try {
+      let clientId = sessionStorage.getItem(CLIENT_SESSION_ID_KEY);
+      if (!clientId) {
+        clientId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        sessionStorage.setItem(CLIENT_SESSION_ID_KEY, clientId);
+      }
+      return clientId;
+    } catch {
+      return `usr-${Date.now()}`;
+    }
+  },
+
   getProducts(): Product[] {
     try {
       const stored = localStorage.getItem(PRODUCTS_KEY);
@@ -25,45 +103,9 @@ export const dbStorage = {
         localStorage.setItem(PRODUCTS_KEY, JSON.stringify(INITIAL_PRODUCTS));
         return INITIAL_PRODUCTS;
       }
-      // Ensure school-01 is always Folders Escolares with color choices, and school-02 & school-03 have the updated images
-      const defaultFolders = INITIAL_PRODUCTS.find(p => p.id === 'school-01');
-      const defaultScissors = INITIAL_PRODUCTS.find(p => p.id === 'school-02');
-      const defaultCrayons = INITIAL_PRODUCTS.find(p => p.id === 'school-03');
-      let updatedFlag = false;
-      const normalized = parsed.map(p => {
-        if (p.id === 'school-01' || p.clave === 'ESC-01') {
-          if (p.name.toLowerCase().includes('cuaderno') || !p.availableColors || p.availableColors.length === 0) {
-            updatedFlag = true;
-            return {
-              ...p,
-              name: defaultFolders?.name || 'Folders Escolares',
-              description: defaultFolders?.description || p.description,
-              availableColors: defaultFolders?.availableColors
-            };
-          }
-        }
-        if ((p.id === 'school-02' || p.clave === 'ESC-02') && defaultScissors) {
-          if (p.image.startsWith('data:image/svg+xml') && p.image !== defaultScissors.image) {
-            updatedFlag = true;
-            return {
-              ...p,
-              image: defaultScissors.image
-            };
-          }
-        }
-        if ((p.id === 'school-03' || p.clave === 'ESC-03') && defaultCrayons) {
-          if (p.image.startsWith('data:image/svg+xml') && p.image !== defaultCrayons.image) {
-            updatedFlag = true;
-            return {
-              ...p,
-              image: defaultCrayons.image
-            };
-          }
-        }
-        return p;
-      });
+      const { normalized, updatedFlag } = normalizeProductsList(parsed);
       if (updatedFlag) {
-        this.saveProducts(normalized);
+        this.saveProductsLocalOnly(normalized);
       }
       return normalized;
     } catch (e) {
@@ -72,7 +114,7 @@ export const dbStorage = {
     }
   },
 
-  saveProducts(products: Product[]): boolean {
+  saveProductsLocalOnly(products: Product[]): boolean {
     try {
       localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
       return true;
@@ -80,6 +122,12 @@ export const dbStorage = {
       console.error('Error saving products to localStorage:', e);
       return false;
     }
+  },
+
+  saveProducts(products: Product[], deletedProductId?: string): boolean {
+    const ok = this.saveProductsLocalOnly(products);
+    pushStateToServer({ products, deletedProductId });
+    return ok;
   },
 
   addProduct(product: Omit<Product, 'id'>): Product {
@@ -95,14 +143,14 @@ export const dbStorage = {
 
   updateProduct(updatedProduct: Product): void {
     const products = this.getProducts();
-    const updated = products.map(p => p.id === updatedProduct.id ? updatedProduct : p);
+    const updated = products.map(p => (p.id === updatedProduct.id ? updatedProduct : p));
     this.saveProducts(updated);
   },
 
   deleteProduct(id: string): void {
     const products = this.getProducts();
     const updated = products.filter(p => p.id !== id);
-    this.saveProducts(updated);
+    this.saveProducts(updated, id);
   },
 
   getPdfs(): PdfDocument[] {
@@ -126,7 +174,7 @@ export const dbStorage = {
         return p;
       });
       if (needsSave) {
-        this.savePdfs(normalized);
+        this.savePdfsLocalOnly(normalized);
       }
       return normalized;
     } catch (e) {
@@ -135,7 +183,7 @@ export const dbStorage = {
     }
   },
 
-  savePdfs(pdfs: PdfDocument[]): boolean {
+  savePdfsLocalOnly(pdfs: PdfDocument[]): boolean {
     try {
       const sanitizedPdfs = pdfs.map(pdf => {
         const { fileData, ...rest } = pdf;
@@ -152,6 +200,13 @@ export const dbStorage = {
       console.error('Error saving PDFs to localStorage:', e);
       return false;
     }
+  },
+
+  savePdfs(pdfs: PdfDocument[], deletedPdfId?: string): boolean {
+    const ok = this.savePdfsLocalOnly(pdfs);
+    const sanitized = this.getPdfs();
+    pushStateToServer({ pdfs: sanitized, deletedPdfId });
+    return ok;
   },
 
   addPdf(pdf: Omit<PdfDocument, 'id' | 'uploadedAt'>): { success: boolean; message: string; pdf?: PdfDocument } {
@@ -270,27 +325,96 @@ export const dbStorage = {
   deletePdf(id: string): void {
     const pdfs = this.getPdfs();
     const updated = pdfs.filter(p => p.id !== id);
-    this.savePdfs(updated);
+    this.savePdfs(updated, id);
   },
 
   resetDefaults(): void {
     try {
       localStorage.setItem(PRODUCTS_KEY, JSON.stringify(INITIAL_PRODUCTS));
       localStorage.setItem(PDFS_KEY, JSON.stringify(INITIAL_PDFS));
+      void fetch('/api/reset-defaults', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ products: INITIAL_PRODUCTS, pdfs: INITIAL_PDFS })
+      }).catch(() => {});
     } catch (e) {
       console.error('Error resetting default data:', e);
     }
   },
 
+  /**
+   * Non-destructive multi-user sync: sends local products & PDFs to the server
+   * and receives the merged list so NO previously uploaded PDFs or added products are ever lost.
+   */
+  async syncWithServer(): Promise<{
+    products: Product[];
+    pdfs: PdfDocument[];
+    presence?: MultiUserPresence;
+  } | null> {
+    try {
+      const localProducts = this.getProducts();
+      const localPdfs = this.getPdfs();
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          products: localProducts,
+          pdfs: localPdfs
+        })
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (Array.isArray(data.products) && data.products.length > 0) {
+        const { normalized } = normalizeProductsList(data.products);
+        this.saveProductsLocalOnly(normalized);
+        data.products = normalized;
+      }
+      if (Array.isArray(data.pdfs) && data.pdfs.length > 0) {
+        this.savePdfsLocalOnly(data.pdfs);
+      }
+      return {
+        products: this.getProducts(),
+        pdfs: this.getPdfs(),
+        presence: data.presence
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Admin session is strictly per-tab/per-session (sessionStorage) and NEVER shared in localStorage.
+   * Closing the page/tab automatically logs out the admin, and other connected users remain normal clients.
+   */
   isAdminUnlocked(): boolean {
-    return localStorage.getItem(ADMIN_KEY) === 'true';
+    try {
+      // Clean up legacy localStorage key so admin session never persists after closing the browser/tab
+      localStorage.removeItem(LEGACY_ADMIN_LOCAL_KEY);
+      return sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true';
+    } catch {
+      return false;
+    }
   },
 
   setAdminUnlocked(unlocked: boolean): void {
-    if (unlocked) {
-      localStorage.setItem(ADMIN_KEY, 'true');
-    } else {
-      localStorage.removeItem(ADMIN_KEY);
+    try {
+      localStorage.removeItem(LEGACY_ADMIN_LOCAL_KEY);
+      if (unlocked) {
+        sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
+      } else {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+      }
+      const clientId = this.getSessionClientId();
+      void fetch('/api/presence/role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          role: unlocked ? 'admin' : 'client'
+        })
+      }).catch(() => {});
+    } catch {
+      // ignore storage errors
     }
   }
 };
