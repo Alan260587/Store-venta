@@ -78,21 +78,21 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
             </h2>
 
             <p className="text-xs sm:text-sm text-emerald-100 font-light leading-relaxed mb-6">
-              El <strong>Catálogo Oficial Sheló NABEL 2026</strong> es de <strong>Descarga Gratuita ($0 MXN)</strong>. También contamos con documentos especializados por <strong>$20 MXN</strong>. Para descargar cualquier PDF, solicita tu <strong>Clave de Descarga</strong> al Administrador por WhatsApp e ingrésala en la tarjeta del documento.
+              Los documentos <strong>Gratis ($0 MXN)</strong> tienen <strong>descarga directa inmediata sin necesidad de clave</strong>. Los documentos especializados de <strong>$20 pesos MXN</strong> cuentan con <strong>Clave de Descarga controlada por el Administrador</strong> (quien te la entrega al adquirirlo por WhatsApp). Si estás conectado como <strong>Administrador</strong>, puedes descargar tanto los de $20 pesos como los gratuitos directamente sin clave.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 text-xs text-emerald-200">
               <div className="flex items-center gap-1.5 bg-emerald-950/40 px-3 py-1.5 rounded-full border border-emerald-500/30">
                 <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                <span className="font-bold text-white">Catálogo Sheló NABEL: GRATIS ($0)</span>
+                <span className="font-bold text-white">Gratis ($0): Descarga Directa Sin Clave</span>
               </div>
               <div className="flex items-center gap-1.5 bg-emerald-950/40 px-3 py-1.5 rounded-full border border-emerald-500/30">
                 <KeyRound className="w-4 h-4 text-amber-400" />
-                <span>Descarga con Clave entregada por Admin</span>
+                <span>$20 MXN: Con Clave controlada por Admin</span>
               </div>
               <div className="flex items-center gap-1.5 bg-emerald-950/40 px-3 py-1.5 rounded-full border border-emerald-500/30">
                 <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                <span>Subida de 1 en 1 o hasta 10 PDFs</span>
+                <span>Admin Conectado: Descarga Todo Sin Clave</span>
               </div>
             </div>
           </div>

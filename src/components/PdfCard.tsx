@@ -14,7 +14,9 @@ import {
   Check,
   Edit3,
   AlertCircle,
-  Lock
+  Lock,
+  Unlock,
+  ShieldCheck
 } from 'lucide-react';
 import { PdfDocument, Product } from '../types';
 import { pdfFileStore } from '../services/pdfFileStore';
@@ -37,7 +39,7 @@ export const PdfCard: React.FC<PdfCardProps> = ({
 }) => {
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
-  // Client Download Key state
+  // Client Download Key state (ONLY used for $20 MXN PDFs when user is NOT admin)
   const [showKeyPrompt, setShowKeyPrompt] = useState<boolean>(false);
   const [enteredKey, setEnteredKey] = useState<string>('');
   const [keyError, setKeyError] = useState<string>('');
@@ -55,19 +57,26 @@ export const PdfCard: React.FC<PdfCardProps> = ({
     setEditedKey(pdf.downloadKey || 'SN-2026');
   }, [pdf.title, pdf.downloadKey]);
 
-  // Strictly determined by pdf.price (0 = Gratis, 20 = $20 MXN)
+  // Strictly determined by pdf.price (0 = Gratis sin clave, 20 = $20 MXN con clave controlada por Admin)
   const isFree = Number(pdf.price) === 0;
 
+  // Close key prompt automatically if switched to free or if admin logs in
+  useEffect(() => {
+    if (isFree || isAdmin) {
+      setShowKeyPrompt(false);
+    }
+  }, [isFree, isAdmin]);
+
   const whatsappMessage = isFree
-    ? `Hola, me gustaría solicitar la clave de descarga gratuita del PDF: '${pdf.title}' (${pdf.pagesCount} páginas).`
-    : `Hola, quiero comprar la descarga del PDF: '${pdf.title}' por $20 pesos.`;
+    ? `Hola, descargué el PDF gratuito: '${pdf.title}' (${pdf.pagesCount} páginas) y me gustaría pedir informes.`
+    : `Hola, quiero comprar la descarga del PDF: '${pdf.title}' por $20 pesos para recibir mi clave de descarga.`;
 
   const whatsappUrl = `https://wa.me/526621395110?text=${encodeURIComponent(whatsappMessage)}`;
 
   const executeFileDownload = async () => {
     setIsDownloading(true);
     try {
-      // 1. Check if user uploaded a real PDF file stored in IndexedDB
+      // 1. Check if user uploaded a real PDF file stored in IndexedDB / Server
       const storedBlobUrl = await pdfFileStore.getFileUrl(pdf.id);
       if (storedBlobUrl) {
         const link = document.createElement('a');
@@ -103,6 +112,12 @@ export const PdfCard: React.FC<PdfCardProps> = ({
     setKeyError('');
     setKeySuccess('');
 
+    // If Admin is connected or PDF is Free, download immediately without needing a key
+    if (isAdmin || isFree) {
+      await executeFileDownload();
+      return;
+    }
+
     const cleanEntered = enteredKey.trim().toUpperCase();
     const expectedKey = (pdf.downloadKey || 'SN-2026').trim().toUpperCase();
 
@@ -120,7 +135,7 @@ export const PdfCard: React.FC<PdfCardProps> = ({
         setShowKeyPrompt(false);
       }, 2200);
     } else {
-      setKeyError('Clave de descarga incorrecta. Verifica la clave con el administrador por WhatsApp.');
+      setKeyError('Clave de descarga incorrecta. Solicita tu clave al administrador por WhatsApp.');
     }
   };
 
@@ -156,11 +171,12 @@ export const PdfCard: React.FC<PdfCardProps> = ({
       {isFree ? (
         <div className="absolute top-0 right-0 bg-gradient-to-l from-emerald-600 to-teal-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-xs flex items-center gap-1 uppercase tracking-wider">
           <Sparkles className="w-3 h-3 text-amber-300" />
-          <span>¡Gratis ($0 MXN)!</span>
+          <span>¡Gratis ($0 MXN) • Descarga Libre!</span>
         </div>
       ) : (
-        <div className="absolute top-0 right-0 bg-slate-800 text-amber-300 text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-xs uppercase tracking-wider">
-          <span>Descarga $20 MXN</span>
+        <div className="absolute top-0 right-0 bg-slate-800 text-amber-300 text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-xs uppercase tracking-wider flex items-center gap-1">
+          <KeyRound className="w-3 h-3 text-amber-300" />
+          <span>$20 MXN • Con Clave</span>
         </div>
       )}
 
@@ -203,17 +219,19 @@ export const PdfCard: React.FC<PdfCardProps> = ({
                     autoFocus
                   />
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold text-amber-900 uppercase block mb-0.5">
-                    Clave de Descarga (Solo Admin):
-                  </label>
-                  <input
-                    type="text"
-                    value={editedKey}
-                    onChange={(e) => setEditedKey(e.target.value.toUpperCase())}
-                    className="w-full px-2.5 py-1 rounded-lg border border-amber-300 bg-white text-xs font-mono font-bold text-slate-900 uppercase"
-                  />
-                </div>
+                {!isFree && (
+                  <div>
+                    <label className="text-[10px] font-bold text-amber-900 uppercase block mb-0.5">
+                      Clave de Descarga ($20 MXN - Control Admin):
+                    </label>
+                    <input
+                      type="text"
+                      value={editedKey}
+                      onChange={(e) => setEditedKey(e.target.value.toUpperCase())}
+                      className="w-full px-2.5 py-1 rounded-lg border border-amber-300 bg-white text-xs font-mono font-bold text-slate-900 uppercase"
+                    />
+                  </div>
+                )}
                 <div className="flex items-center gap-1.5 pt-1">
                   <button
                     type="button"
@@ -246,7 +264,7 @@ export const PdfCard: React.FC<PdfCardProps> = ({
                       type="button"
                       onClick={() => setIsEditingTitle(true)}
                       className="p-1 text-amber-700 hover:text-amber-900 hover:bg-amber-100 rounded-lg shrink-0"
-                      title="Modificar título o clave del PDF"
+                      title={isFree ? 'Modificar título del PDF' : 'Modificar título o clave del PDF'}
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
@@ -273,59 +291,86 @@ export const PdfCard: React.FC<PdfCardProps> = ({
         </p>
       </div>
 
-      {/* Footer / Admin Controls & Client Download Key Verification */}
+      {/* Footer / Admin Controls & Download Actions */}
       <div className="pt-4 border-t border-slate-100 mt-auto space-y-3">
         
-        {/* EXCLUSIVE ADMIN BOX: Clave de Descarga (Visible ONLY to Admin) + Price & Title Controls */}
+        {/* EXCLUSIVE ADMIN CONTROL BOX:
+            - For $20 MXN PDFs: Shows Download Key (Control Admin) + Copy + Edit + Price Switch
+            - For Gratis ($0) PDFs: Does NOT use or show Download Key; shows "Sin Clave (Gratis $0)" + Edit Title + Price Switch */}
         {isAdmin && (
           <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2.5 shadow-2xs">
-            <div className="flex items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
-              <div className="flex items-center gap-1.5">
-                <KeyRound className="w-4 h-4 text-amber-700 shrink-0" />
-                <div>
-                  <span className="text-[10px] font-bold text-amber-900 uppercase block leading-none">
-                    Clave de Descarga (Solo Admin):
-                  </span>
-                  <span className="font-mono font-bold text-sm text-slate-950 tracking-wider">
-                    {pdf.downloadKey || 'SN-2026'}
-                  </span>
+            {!isFree ? (
+              <div className="flex items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <KeyRound className="w-4 h-4 text-amber-700 shrink-0" />
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-900 uppercase block leading-none">
+                      Clave de Descarga ($20 MXN • Control Admin):
+                    </span>
+                    <span className="font-mono font-bold text-sm text-slate-950 tracking-wider">
+                      {pdf.downloadKey || 'SN-2026'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleCopyKey}
+                    className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
+                    title="Copiar clave para entregar al cliente que compre el PDF de $20"
+                  >
+                    {copiedKey ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        <span className="text-emerald-700">¡Copiada!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copiar Clave</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingTitle(true)}
+                    className="px-2 py-1 bg-white hover:bg-amber-100 text-slate-700 border border-amber-300 rounded-lg text-[11px] font-semibold"
+                    title="Editar título o clave"
+                  >
+                    Editar
+                  </button>
                 </div>
               </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <Unlock className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <div>
+                    <span className="text-[10px] font-bold text-emerald-900 uppercase block leading-none">
+                      Producto Gratuito ($0 MXN):
+                    </span>
+                    <span className="text-[11px] font-bold text-emerald-700">
+                      Descarga Libre (No ocupa clave)
+                    </span>
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={handleCopyKey}
-                  className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
-                  title="Copiar clave para entregar al cliente"
-                >
-                  {copiedKey ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-600" />
-                      <span className="text-emerald-700">¡Copiada!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      <span>Copiar Clave</span>
-                    </>
-                  )}
-                </button>
                 <button
                   type="button"
                   onClick={() => setIsEditingTitle(true)}
-                  className="px-2 py-1 bg-white hover:bg-amber-100 text-slate-700 border border-amber-300 rounded-lg text-[11px] font-semibold"
-                  title="Editar título o clave"
+                  className="px-2.5 py-1 bg-white hover:bg-amber-100 text-slate-700 border border-amber-300 rounded-lg text-[11px] font-semibold"
+                  title="Editar título del PDF"
                 >
                   Editar Título
                 </button>
               </div>
-            </div>
+            )}
 
             {onUpdatePdf && (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] font-bold text-amber-900 uppercase">
-                  Modalidad:
+                  Control Admin:
                 </span>
                 <div className="flex items-center gap-1">
                   <button
@@ -337,7 +382,7 @@ export const PdfCard: React.FC<PdfCardProps> = ({
                         : 'bg-white text-slate-600 hover:bg-emerald-50 border border-slate-200'
                     }`}
                   >
-                    Gratis ($0)
+                    Gratis (Sin Clave)
                   </button>
                   <button
                     type="button"
@@ -348,7 +393,7 @@ export const PdfCard: React.FC<PdfCardProps> = ({
                         : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                     }`}
                   >
-                    $20 pesos
+                    $20 (Con Clave)
                   </button>
                   {onDeletePdf && (
                     <button
@@ -382,14 +427,83 @@ export const PdfCard: React.FC<PdfCardProps> = ({
             )}
           </div>
 
-          <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
-            <Lock className="w-3 h-3 text-amber-600" />
-            <span>Descarga con Clave</span>
-          </span>
+          {isFree ? (
+            <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 flex items-center gap-1 font-bold">
+              <Unlock className="w-3 h-3 text-emerald-600" />
+              <span>Descarga Directa Sin Clave</span>
+            </span>
+          ) : isAdmin ? (
+            <span className="text-[11px] text-amber-900 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-300 flex items-center gap-1 font-bold">
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
+              <span>Admin Conectado: Sin Clave</span>
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold">
+              <Lock className="w-3 h-3 text-amber-600" />
+              <span>Requiere Clave ($20 MXN)</span>
+            </span>
+          )}
         </div>
 
-        {/* Client Key Input Prompt when downloading */}
-        {showKeyPrompt ? (
+        {/* Download Actions:
+            Case 1: Admin is connected -> Direct 1-click download for BOTH $20 MXN and Gratis ($0) without asking for any key!
+            Case 2: Free PDF ($0 MXN) -> Direct 1-click download for ALL users without asking for any key!
+            Case 3: Paid PDF ($20 MXN) & Normal Client -> Buy via WhatsApp or Enter Download Key given by Admin */}
+        {isAdmin ? (
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={executeFileDownload}
+              disabled={isDownloading}
+              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition-all active:scale-95"
+            >
+              {isDownloading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Descargando PDF...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>
+                    Descargar PDF Directo ({isFree ? 'Gratis $0' : '$20 MXN'} • Admin Sin Clave)
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
+        ) : isFree ? (
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={executeFileDownload}
+              disabled={isDownloading}
+              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+            >
+              {isDownloading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Descargando PDF Gratis...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>Descargar PDF Gratis (Sin Clave)</span>
+                </>
+              )}
+            </button>
+
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-semibold text-xs rounded-xl border border-emerald-200 flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Consultar sobre este catálogo por WhatsApp</span>
+            </a>
+          </div>
+        ) : showKeyPrompt ? (
           <form
             onSubmit={handleVerifyKeyAndDownload}
             className="p-3.5 rounded-xl bg-slate-50 border-2 border-emerald-500/80 space-y-2.5 animate-fade-in"
@@ -397,7 +511,7 @@ export const PdfCard: React.FC<PdfCardProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Ingresa tu Clave de Descarga:</span>
+                <span>Ingresa tu Clave de Descarga ($20 MXN):</span>
               </label>
               <button
                 type="button"
@@ -413,23 +527,8 @@ export const PdfCard: React.FC<PdfCardProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 leading-snug">
-              Escribe la clave que te entregó el Administrador para iniciar la descarga del archivo PDF.
+              Escribe la clave que te entregó el Administrador tras tu compra de $20 pesos para descargar el PDF.
             </p>
-
-            {isAdmin && (
-              <div className="p-2 rounded-lg bg-amber-100/80 border border-amber-300 text-[11px] text-amber-950 flex items-center justify-between">
-                <span>
-                  Clave Admin: <strong className="font-mono">{pdf.downloadKey || 'SN-2026'}</strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setEnteredKey(pdf.downloadKey || 'SN-2026')}
-                  className="underline font-bold text-emerald-800 hover:text-emerald-950"
-                >
-                  Usar clave
-                </button>
-              </div>
-            )}
 
             <div className="flex items-center gap-2">
               <input
@@ -473,30 +572,18 @@ export const PdfCard: React.FC<PdfCardProps> = ({
           </form>
         ) : (
           <div className="space-y-2">
-            {/* Button 1: Request/Buy via WhatsApp */}
-            {isFree ? (
-              <a
-                href={whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-2.5 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold text-xs rounded-xl border border-emerald-200 flex items-center justify-center gap-2 transition-colors"
-              >
-                <MessageCircle className="w-4 h-4 text-emerald-600" />
-                <span>Solicitar Clave Gratis por WhatsApp</span>
-              </a>
-            ) : (
-              <a
-                href={whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-slate-800/20 flex items-center justify-center gap-2 transition-all active:scale-95"
-              >
-                <MessageCircle className="w-4 h-4 text-amber-300" />
-                <span>Comprar descarga por $20 MXN</span>
-              </a>
-            )}
+            {/* Button 1: Buy $20 MXN PDF via WhatsApp */}
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-slate-800/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+            >
+              <MessageCircle className="w-4 h-4 text-amber-300" />
+              <span>Comprar descarga por $20 MXN</span>
+            </a>
 
-            {/* Button 2: Download PDF using the Download Key */}
+            {/* Button 2: Download $20 MXN PDF using the Download Key */}
             <button
               type="button"
               onClick={() => {
@@ -504,11 +591,7 @@ export const PdfCard: React.FC<PdfCardProps> = ({
                 setKeyError('');
                 setKeySuccess('');
               }}
-              className={`w-full py-2.5 px-4 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 ${
-                isFree
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md'
-                  : 'bg-amber-100 hover:bg-amber-200 text-slate-900 border border-amber-300'
-              }`}
+              className="w-full py-2.5 px-4 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 bg-amber-100 hover:bg-amber-200 text-slate-900 border border-amber-300"
             >
               <KeyRound className="w-4 h-4" />
               <span>Descargar PDF (Ingresar Clave de Descarga)</span>

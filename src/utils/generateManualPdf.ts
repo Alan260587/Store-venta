@@ -105,8 +105,8 @@ export async function generateAdminManualPdf(): Promise<Blob> {
   y = drawBullet(page1, 'Catalogo de Productos:', 'Muestra todos los articulos Shelo NABEL y utiles escolares.', y);
   y = drawBullet(page1, 'Seleccion de Colores y Cantidad:', 'En Folders Escolares ($25) el cliente elige color (Morado, Amarillo, Naranja o Azul).', y);
   y = drawBullet(page1, 'Carrito de Compras:', 'Suma automaticamente los subtotales y envia el pedido directo a WhatsApp.', y);
-  y = drawBullet(page1, 'Tienda de PDFs:', 'Permite ofrecer catalogos Gratis ($0) o de pago ($20 MXN) protegidos con Clave de Descarga.', y);
-  y = drawBullet(page1, 'Acceso Administrador:', 'Se desbloquea desde el boton "Area Admin" ingresando la clave secreta (****).', y);
+  y = drawBullet(page1, 'PDFs Gratis vs $20 MXN:', 'Los PDFs Gratis ($0) se descargan sin clave; solo los de $20 MXN usan Clave controlada por Admin.', y);
+  y = drawBullet(page1, 'Acceso Administrador:', 'Se conecta solo con la clave secreta (****) y cierra sesion automaticamente al cerrar la pagina.', y);
 
   y -= 10;
 
@@ -114,20 +114,20 @@ export async function generateAdminManualPdf(): Promise<Blob> {
   y = drawSectionHeader(page1, '2. LO QUE VE EL CLIENTE (VISTA CLIENTE)', y, rgb(0.93, 0.96, 0.99), rgb(0.08, 0.32, 0.55));
   y = drawBullet(page1, 'En Productos:', 'Ve fotos, claves, precios en MXN, selector de color en Folders y boton "Agregar".', y);
   y = drawBullet(page1, 'En Carrito:', 'Ve el desglose de productos, colores elegidos, total a pagar y boton "Enviar pedido por WhatsApp".', y);
-  y = drawBullet(page1, 'En Descargas PDF:', 'Ve el titulo del PDF, cantidad de paginas detectadas y si cuesta Gratis ($0) o $20 MXN.', y);
-  y = drawBullet(page1, 'Proteccion de Claves:', 'El cliente NO ve la clave de descarga del PDF ni los botones de edicion.', y);
-  y = drawBullet(page1, 'Al Descargar un PDF:', 'Al pulsar "Descargar PDF", se le abre un campo que le pide ingresar la Clave de Descarga.', y);
+  y = drawBullet(page1, 'En PDFs Gratuitos ($0):', 'No ocupan clave de descarga; el cliente los descarga directamente con un clic.', y);
+  y = drawBullet(page1, 'En PDFs de $20 Pesos:', 'El cliente NO ve la clave; pulsa "Descargar PDF (Ingresar Clave)" para escribir la que le da el Admin.', y);
+  y = drawBullet(page1, 'Compra de PDF de $20:', 'El cliente solicita su clave por WhatsApp al comprar el documento de $20 MXN.', y);
   y = drawBullet(page1, 'Seguridad:', 'En la ventana de administrador, el cliente solo ve asteriscos (Clave requerida: ****).', y);
 
   y -= 10;
 
   // SECTION 3: LO QUE VE EL ADMINISTRADOR (VISTA ADMIN)
-  y = drawSectionHeader(page1, '3. LO QUE VE EL ADMINISTRADOR (MODO ADMIN ACTIVO)', y, rgb(0.99, 0.95, 0.86), rgb(0.55, 0.32, 0.04));
-  y = drawBullet(page1, 'Barra Superior Dorada:', 'Indica que el Acceso Total Administrador esta activo (Clave ****).', y);
-  y = drawBullet(page1, 'Clave de Descarga (Solo Admin):', 'En cada tarjeta de PDF y en la tabla ve la clave unica (ej. SN-2026) y boton "Copiar Clave".', y);
-  y = drawBullet(page1, 'Subida de 1 a 10 PDFs:', 'Puede seleccionar 1 PDF (de 1 en 1) o hasta 10 PDFs a la vez desde su dispositivo.', y);
-  y = drawBullet(page1, 'Modificar Titulos al Guardar:', 'Antes de guardar cada PDF puede cambiarle el titulo, elegir Gratis ($0) o $20 y personalizar su clave.', y);
-  y = drawBullet(page1, 'Edicion en Vivo:', 'Puede editar el titulo o precio de cualquier PDF o producto ya guardado en la pagina.', y);
+  y = drawSectionHeader(page1, '3. LO QUE VE Y CONTROLA EL ADMINISTRADOR (MODO ADMIN ACTIVO)', y, rgb(0.99, 0.95, 0.86), rgb(0.55, 0.32, 0.04));
+  y = drawBullet(page1, 'Descarga Sin Clave (Admin):', 'Cuando el Admin esta conectado puede descargar tanto los de $20 como los gratuitos sin clave.', y);
+  y = drawBullet(page1, 'Control de Clave en $20 MXN:', 'Solo los productos de $20 pesos tienen Clave de Descarga controlada por el Admin (Copiar/Editar).', y);
+  y = drawBullet(page1, 'Productos Gratuitos ($0):', 'No llevan clave de descarga; el Admin puede alternar cualquier PDF entre Gratis y $20 pesos.', y);
+  y = drawBullet(page1, 'Subida de 1 a 10 PDFs:', 'Puede subir de 1 en 1 o hasta 10 PDFs a la vez y modificar sus titulos antes de guardar.', y);
+  y = drawBullet(page1, 'Multiusuario y Auto-Cierre:', 'Los demas usuarios ven la tienda normal; al cerrar la pagina tu sesion Admin se cierra sola.', y);
   y = drawBullet(page1, 'Cambiar Fotos (Camara):', 'En cada tarjeta de producto ve el icono de camara para cambiar la foto desde su galeria.', y);
 
   page1.drawText('Pagina 1 de 2 — Continua en la siguiente pagina con los Mensajes que llegan al Cliente y al Administrador', {
@@ -192,8 +192,8 @@ export async function generateAdminManualPdf(): Promise<Blob> {
 
   y2 -= 10;
 
-  // SECTION 4B: DESCARGA DE PDF CON CLAVE
-  y2 = drawSectionHeader(page2, '5. CASO B: COMPRA / DESCARGA DE UN ARCHIVO PDF CON CLAVE', y2, rgb(0.99, 0.95, 0.86), rgb(0.55, 0.32, 0.04));
+  // SECTION 4B: DESCARGA DE PDF DE $20 MXN CON CLAVE
+  y2 = drawSectionHeader(page2, '5. CASO B: COMPRA DE UN ARCHIVO PDF DE $20 PESOS (CON CLAVE DE DESCARGA)', y2, rgb(0.99, 0.95, 0.86), rgb(0.55, 0.32, 0.04));
 
   y2 = drawParagraph(page2, 'PASO 1 — Lo que el Cliente envia y LE LLEGA AL ADMINISTRADOR por WhatsApp:', y2, 42, true, rgb(0.04, 0.38, 0.26));
   page2.drawRectangle({
@@ -204,13 +204,13 @@ export async function generateAdminManualPdf(): Promise<Blob> {
     color: rgb(0.96, 0.96, 0.98)
   });
   let my2 = y2 - 14;
-  my2 = drawParagraph(page2, '• Si el PDF cuesta $20 MXN: "Hola, quiero comprar la descarga del PDF: \'Lista de Precios 2026\' por $20 pesos."', my2, 55, false);
-  my2 = drawParagraph(page2, '• Si el PDF es Gratis ($0): "Hola, me gustaria solicitar la clave de descarga gratuita del PDF: \'Catalogo Oficial\'."', my2, 55, false);
+  my2 = drawParagraph(page2, '• Producto de $20 MXN: "Hola, quiero comprar la descarga del PDF: \'Lista de Precios 2026\' por $20 pesos."', my2, 55, false);
+  my2 = drawParagraph(page2, '• Nota: Los PDFs Gratuitos ($0 MXN) tienen descarga libre directa y NO requieren clave de descarga.', my2, 55, false);
 
   y2 -= 60;
 
   y2 = drawParagraph(page2, 'PASO 2 — Lo que hace el Administrador y LO QUE LE LLEGA AL CLIENTE:', y2, 42, true, rgb(0.55, 0.32, 0.04));
-  y2 = drawBullet(page2, '1. Consultar Clave:', 'El Administrador mira el recuadro "Clave de Descarga (Solo Admin)" del PDF (ej. SN-1012).', y2);
+  y2 = drawBullet(page2, '1. Consultar Clave ($20):', 'El Administrador mira la "Clave de Descarga ($20 MXN)" del PDF (ej. SN-1012).', y2);
   y2 = drawBullet(page2, '2. Copiar y Enviar:', 'El Administrador presiona "Copiar Clave" y se la envia al Cliente por WhatsApp:', y2);
 
   page2.drawRectangle({
@@ -231,10 +231,10 @@ export async function generateAdminManualPdf(): Promise<Blob> {
 
   y2 -= 50;
 
-  y2 = drawParagraph(page2, 'PASO 3 — Lo que el Cliente hace en la Pagina y el Archivo que recibe:', y2, 42, true, rgb(0.08, 0.32, 0.55));
-  y2 = drawBullet(page2, '1. Ingresar Clave:', 'El Cliente hace clic en "Descargar PDF (Ingresar Clave de Descarga)" en la tarjeta del PDF.', y2);
-  y2 = drawBullet(page2, '2. Validacion:', 'Escribe la clave entregada por el Administrador (ej. SN-1012) y pulsa "Descargar".', y2);
-  y2 = drawBullet(page2, '3. Descarga Directa:', 'Al coincidir la clave, el archivo PDF se descarga automaticamente en el dispositivo del Cliente.', y2);
+  y2 = drawParagraph(page2, 'PASO 3 — Descarga del Archivo (Cliente vs Administrador Conectado):', y2, 42, true, rgb(0.08, 0.32, 0.55));
+  y2 = drawBullet(page2, '1. Cliente en PDF de $20:', 'Ingresa la clave recibida (ej. SN-1012) y descarga su archivo PDF al instante.', y2);
+  y2 = drawBullet(page2, '2. Cliente en PDF Gratis:', 'Pulsa "Descargar PDF Gratis (Sin Clave)" y baja el archivo directamente.', y2);
+  y2 = drawBullet(page2, '3. Administrador Conectado:', 'No necesita clave; descarga directamente tanto los PDFs de $20 pesos como los gratuitos.', y2);
 
   page2.drawText('Pagina 2 de 2 — Instructivo Oficial de Administracion Shelo NABEL', {
     x: 35,

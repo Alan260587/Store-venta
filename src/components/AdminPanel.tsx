@@ -32,6 +32,7 @@ import { countPdfPages } from '../utils/pdfParser';
 import { pdfFileStore } from '../services/pdfFileStore';
 import { generateRandomDownloadKey } from '../services/dbStorage';
 import { generateAdminManualPdf } from '../utils/generateManualPdf';
+import { generateDownloadablePdf } from '../utils/generateCatalogPdf';
 
 interface AdminPanelProps {
   products: Product[];
@@ -79,6 +80,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<string>('');
   const [isDownloadingManual, setIsDownloadingManual] = useState<boolean>(false);
+  const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
 
   // Inline editing for existing PDFs in the table (Title & Download Key)
   const [editingPdfId, setEditingPdfId] = useState<string | null>(null);
@@ -129,6 +131,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Direct 1-click download for connected Admin (no download key required for $20 or Gratis PDFs)
+  const handleDirectAdminDownloadPdf = async (pdf: PdfDocument) => {
+    setDownloadingPdfId(pdf.id);
+    try {
+      const storedBlobUrl = await pdfFileStore.getFileUrl(pdf.id);
+      if (storedBlobUrl) {
+        const link = document.createElement('a');
+        link.href = storedBlobUrl;
+        link.download = `${pdf.title.replace(/\s+/g, '_')}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(storedBlobUrl), 10000);
+        return;
+      }
+
+      const generatedBlob = await generateDownloadablePdf(pdf, products);
+      const url = URL.createObjectURL(generatedBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${pdf.title.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      console.error('Error downloading PDF as admin:', err);
+    } finally {
+      setDownloadingPdfId(null);
+    }
+  };
+
   const handleSetPdfPrice = (pdf: PdfDocument, newPrice: number) => {
     onUpdatePdf({
       ...pdf,
@@ -151,7 +185,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       downloadKey: cleanKey
     });
     setEditingPdfId(null);
-    setInlineUploadMsg(`¡Se guardó el nuevo título "${cleanTitle}" y clave "${cleanKey}" en la página!`);
+    setInlineUploadMsg(
+      Number(pdf.price) === 0
+        ? `¡Se guardó el título "${cleanTitle}" (Gratis Sin Clave) en la página!`
+        : `¡Se guardó el título "${cleanTitle}" y clave "${cleanKey}" ($20 MXN) en la página!`
+    );
     setTimeout(() => setInlineUploadMsg(''), 4000);
   };
 
@@ -529,15 +567,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
 
                   <div className="md:col-span-3">
-                    <label className="text-[10px] font-bold text-amber-800 uppercase block mb-1">
-                      Clave Descarga (Admin):
-                    </label>
-                    <input
-                      type="text"
-                      value={item.downloadKey}
-                      onChange={(e) => handleUpdateStaged(item.tempId, { downloadKey: e.target.value.toUpperCase() })}
-                      className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50/50 font-mono font-bold text-xs text-slate-900 uppercase"
-                    />
+                    {Number(item.price) > 0 ? (
+                      <>
+                        <label className="text-[10px] font-bold text-amber-800 uppercase block mb-1">
+                          Clave Descarga ($20 • Control Admin):
+                        </label>
+                        <input
+                          type="text"
+                          value={item.downloadKey}
+                          onChange={(e) => handleUpdateStaged(item.tempId, { downloadKey: e.target.value.toUpperCase() })}
+                          className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50/50 font-mono font-bold text-xs text-slate-900 uppercase"
+                        />
+                      </>
+                    ) : (
+                      <div>
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase block mb-1">
+                          Acceso Gratuito:
+                        </span>
+                        <div className="w-full px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 font-bold text-xs flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>Sin Clave (Descarga Libre)</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="md:col-span-3 flex items-center gap-1.5">
@@ -550,7 +602,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           : 'bg-white border border-slate-200 text-slate-600'
                       }`}
                     >
-                      Gratis ($0)
+                      Gratis (Sin Clave)
                     </button>
                     <button
                       type="button"
@@ -561,7 +613,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           : 'bg-white border border-slate-200 text-slate-600'
                       }`}
                     >
-                      $20 MXN
+                      $20 (Con Clave)
                     </button>
                   </div>
 
@@ -700,7 +752,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             }`}
           >
             <FileText className="w-4 h-4" />
-            <span>Gestión de PDFs y Claves ({pdfs.length})</span>
+            <span>Gestión de PDFs y Claves ($20) ({pdfs.length})</span>
           </button>
 
           <button
@@ -749,10 +801,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
               <div>
                 <h3 className="font-bold text-slate-800 text-base">
-                  Listado de PDFs, Edición de Títulos y Claves de Descarga ({filteredPdfs.length})
+                  Control de PDFs: Gratis (Sin Clave) y $20 Pesos (Con Clave Controlada por Admin) ({filteredPdfs.length})
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Aquí como administrador puedes ver y copiar la <strong>Clave de Descarga</strong> para entregar al cliente, además de <strong>modificar el título</strong> o cambiar entre <strong>Gratis ($0) y $20 pesos</strong>.
+                  Los productos <strong>Gratis ($0) no ocupan clave de descarga</strong>. Los productos de <strong>$20 pesos tienen Clave de Descarga bajo tu control</strong>. Como Administrador conectado, puedes <strong>descargar tanto los de $20 pesos como los gratuitos sin necesidad de clave</strong>.
                 </p>
               </div>
             </div>
@@ -763,10 +815,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 font-bold uppercase text-slate-500">
                       <th className="py-3 px-4">Título del PDF (Modificable)</th>
-                      <th className="py-3 px-4">Clave de Descarga (Solo Admin)</th>
+                      <th className="py-3 px-4">Control de Clave (Solo en $20 MXN)</th>
                       <th className="py-3 px-4">Páginas</th>
                       <th className="py-3 px-4">Modalidad (Gratis o $20)</th>
-                      <th className="py-3 px-4 text-right">Acciones</th>
+                      <th className="py-3 px-4 text-right">Descarga Admin y Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -786,6 +838,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   className="w-full max-w-xs px-2.5 py-1.5 border-2 border-emerald-500 rounded-lg text-xs font-bold"
                                   autoFocus
                                 />
+                                {isFree && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveEditPdf(pdf)}
+                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[11px]"
+                                    >
+                                      Guardar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingPdfId(null)}
+                                      className="px-2 py-1.5 bg-slate-200 text-slate-700 font-semibold rounded-lg text-[11px]"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">
@@ -808,7 +878,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </td>
 
                           <td className="py-3.5 px-4">
-                            {isEditing ? (
+                            {isFree ? (
+                              <div className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1 rounded-xl font-bold text-[11px]">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>Sin Clave (Gratis • Descarga Libre)</span>
+                              </div>
+                            ) : isEditing ? (
                               <div className="flex items-center gap-2">
                                 <input
                                   type="text"
@@ -841,7 +916,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   type="button"
                                   onClick={() => handleCopyDownloadKey(pdf)}
                                   className="px-2 py-0.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-200 rounded text-[10px] font-bold flex items-center gap-1"
-                                  title="Copiar clave para entregar al cliente"
+                                  title="Copiar clave para entregar al cliente de $20 pesos"
                                 >
                                   {copiedPdfId === pdf.id ? (
                                     <>
@@ -878,7 +953,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 }`}
                               >
                                 <Sparkles className="w-3 h-3" />
-                                <span>Gratis ($0)</span>
+                                <span>Gratis (Sin Clave)</span>
                               </button>
                               <button
                                 type="button"
@@ -889,18 +964,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                     : 'text-slate-600 hover:bg-white'
                                 }`}
                               >
-                                $20 pesos
+                                $20 (Con Clave)
                               </button>
                             </div>
                           </td>
 
                           <td className="py-3.5 px-4 text-right">
-                            <div className="inline-flex items-center gap-1">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => void handleDirectAdminDownloadPdf(pdf)}
+                                disabled={downloadingPdfId === pdf.id}
+                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg shadow-2xs flex items-center gap-1 transition-all"
+                                title="Descargar directamente sin necesidad de clave (Modo Admin)"
+                              >
+                                {downloadingPdfId === pdf.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Download className="w-3.5 h-3.5" />
+                                )}
+                                <span>Descargar</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleStartEditPdf(pdf)}
                                 className="p-1.5 text-slate-500 hover:text-emerald-700 rounded hover:bg-emerald-50"
-                                title="Editar título y clave"
+                                title={isFree ? 'Editar título' : 'Editar título y clave'}
                               >
                                 <Edit3 className="w-4 h-4" />
                               </button>
@@ -1078,28 +1167,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       Con Clave Secreta (****) Activa
                     </span>
                     <h4 className="font-serif font-bold text-lg text-slate-900">
-                      1. Lo que ve el ADMINISTRADOR
+                      1. Lo que ve y controla el ADMINISTRADOR
                     </h4>
                   </div>
                 </div>
 
                 <ul className="space-y-3 text-xs text-slate-700">
                   <li className="flex items-start gap-2.5">
-                    <KeyRound className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <Download className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Clave de Descarga en cada PDF (Solo Admin):</strong> Ve el recuadro amarillo con la clave única de cada PDF (ej. <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">SN-2026</code> o <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">SN-1012</code>) y el botón <strong>"Copiar Clave"</strong> para entregársela al cliente.
+                      <strong>Descarga Directa Sin Clave cuando estás Conectado:</strong> Como Administrador conectado, <strong>no necesitas clave de descarga</strong>; puedes descargar con un solo clic tanto los productos de <strong>$20 pesos</strong> como los <strong>gratuitos ($0)</strong>.
                     </div>
                   </li>
                   <li className="flex items-start gap-2.5">
-                    <Upload className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <KeyRound className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Subida de PDFs (1 en 1 o hasta 10 a la vez):</strong> Ve los botones para subir archivos desde su dispositivo y el contador de capacidad (hasta 500 PDFs y detección automática de hasta 1,500 páginas).
+                      <strong>Control de Clave en Productos de $20 Pesos:</strong> Únicamente los PDFs de <strong>$20 pesos</strong> tienen la opción de <strong>Clave de Descarga</strong> controlada por el Administrador (ej. <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">SN-1012</code>) con botón para copiarla o editarla. Los productos <strong>Gratuitos ($0) no ocupan clave</strong>.
                     </div>
                   </li>
                   <li className="flex items-start gap-2.5">
                     <Edit3 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Modificación de Títulos y Precios ($0 o $20):</strong> Al seleccionar un PDF (o después de guardado), puede cambiarle el título, personalizar su clave de descarga y alternar con un clic entre <strong>Gratis ($0)</strong> y <strong>$20 pesos</strong>.
+                      <strong>Control Total de Modalidad (Gratis o $20):</strong> El Administrador puede cambiar cualquier PDF en cualquier momento entre <strong>Gratis (Sin Clave)</strong> y <strong>$20 pesos (Con Clave)</strong>, así como modificar su título.
                     </div>
                   </li>
                   <li className="flex items-start gap-2.5">
@@ -1137,13 +1226,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <li className="flex items-start gap-2.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Tarjetas de PDFs Protegidas:</strong> En "Descargas y Documentos", el cliente ve el título del PDF, sus páginas detectadas y si es <strong>Gratis ($0 MXN)</strong> o cuesta <strong>$20 MXN</strong>. <strong>El cliente NUNCA ve la Clave de Descarga en pantalla.</strong>
+                      <strong>Productos Gratuitos ($0 MXN) Sin Clave:</strong> En los PDFs gratuitos, el cliente ve el botón <strong>"Descargar PDF Gratis (Sin Clave)"</strong> y descarga el archivo directamente sin que le pida clave.
                     </div>
                   </li>
                   <li className="flex items-start gap-2.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                     <div>
-                      <strong>Campo para Ingresar Clave al Descargar:</strong> Cuando el cliente presiona <strong>"Descargar PDF (Ingresar Clave de Descarga)"</strong>, se le abre un recuadro pidiéndole escribir la clave que le entregó el Administrador.
+                      <strong>Productos de $20 Pesos Con Clave:</strong> En los PDFs de $20 MXN, el cliente NO ve la clave en pantalla; cuando presiona <strong>"Descargar PDF (Ingresar Clave de Descarga)"</strong>, se le abre el recuadro para escribir la clave que le entrega el Administrador tras su compra.
                     </div>
                   </li>
                   <li className="flex items-start gap-2.5">
@@ -1168,15 +1257,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     3. Lo que le llega al Administrador y lo que le llega al Cliente
                   </h4>
                   <p className="text-xs text-slate-500">
-                    Así funcionan los mensajes reales en WhatsApp (+52 662 139 5110) y la entrega de Claves de Descarga:
+                    Así funcionan los mensajes reales en WhatsApp (+52 662 139 5110) y la entrega de Claves de Descarga en productos de $20 pesos:
                   </p>
                 </div>
               </div>
 
-              {/* Caso 1: Descarga de PDF con Clave */}
+              {/* Caso 1: Descarga de PDF de $20 MXN con Clave */}
               <div className="space-y-3">
                 <h5 className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg inline-block">
-                  Caso A: Cuando un Cliente solicita o compra un PDF ($20 MXN o Gratis)
+                  Caso A: Cuando un Cliente compra un PDF de $20 MXN (Con Clave controlada por Admin)
                 </h5>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1187,10 +1276,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <ArrowRight className="w-3.5 h-3.5" />
                     </span>
                     <p className="text-xs text-slate-600">
-                      El cliente pulsa el botón de WhatsApp en el PDF y <strong>al Administrador le llega a su WhatsApp (+52 662 139 5110)</strong> este mensaje:
+                      El cliente pulsa "Comprar descarga por $20 MXN" y <strong>al Administrador le llega a su WhatsApp (+52 662 139 5110)</strong> este mensaje:
                     </p>
                     <div className="p-3 rounded-lg bg-emerald-950 text-emerald-100 font-mono text-[11px] leading-relaxed">
-                      "Hola, quiero comprar la descarga del PDF: 'Lista de Precios Mayoreo y Ganancias 2026' por $20 pesos."
+                      "Hola, quiero comprar la descarga del PDF: 'Lista de Precios Mayoreo y Ganancias 2026' por $20 pesos para recibir mi clave de descarga."
                     </div>
                   </div>
 
@@ -1201,7 +1290,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <ArrowRight className="w-3.5 h-3.5" />
                     </span>
                     <p className="text-xs text-slate-600">
-                      El Administrador mira la <strong>Clave de Descarga (Solo Admin)</strong> en la tarjeta del PDF (ej. <code className="font-bold">SN-1012</code>), la copia y <strong>le envía al Cliente</strong>:
+                      El Administrador mira la <strong>Clave de Descarga ($20 MXN)</strong> en el PDF (ej. <code className="font-bold">SN-1012</code>), la copia y <strong>le envía al Cliente</strong>:
                     </p>
                     <div className="p-3 rounded-lg bg-white border border-amber-300 text-slate-800 font-mono text-[11px] leading-relaxed">
                       "¡Hola! Gracias por tu compra. Tu Clave de Descarga para el PDF es: <strong>SN-1012</strong>. Ingrésala en la página para descargarlo."
@@ -1215,7 +1304,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <span>Paso 3: Descarga del Archivo al Cliente</span>
                     </span>
                     <p className="text-xs text-slate-600">
-                      El Cliente presiona <strong>"Descargar PDF (Ingresar Clave de Descarga)"</strong>, escribe <code className="font-bold">SN-1012</code> y <strong>al Cliente le llega inmediatamente el archivo PDF descargado</strong> en su celular o computadora.
+                      El Cliente presiona <strong>"Descargar PDF (Ingresar Clave de Descarga)"</strong>, escribe <code className="font-bold">SN-1012</code> y <strong>al Cliente le llega inmediatamente el archivo PDF descargado</strong>. (En los PDFs Gratuitos de $0, la descarga es directa sin clave).
                     </p>
                     <div className="p-2.5 rounded-lg bg-emerald-600 text-white font-bold text-[11px] text-center">
                       ✓ ¡Clave verificada! Descargando PDF...

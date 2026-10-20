@@ -542,16 +542,30 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
                       </div>
 
                       <div className="sm:col-span-5">
-                        <label className="text-[10px] font-bold text-amber-800 uppercase block mb-1 flex items-center gap-1">
-                          <KeyRound className="w-3 h-3" />
-                          <span>Clave de Descarga (Solo Admin):</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={item.downloadKey}
-                          onChange={(e) => handleUpdatePending(item.tempId, { downloadKey: e.target.value.toUpperCase() })}
-                          className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50/50 font-mono font-bold text-slate-900 uppercase text-xs sm:text-sm"
-                        />
+                        {!isFree ? (
+                          <>
+                            <label className="text-[10px] font-bold text-amber-800 uppercase block mb-1 flex items-center gap-1">
+                              <KeyRound className="w-3 h-3" />
+                              <span>Clave de Descarga ($20 • Control Admin):</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={item.downloadKey}
+                              onChange={(e) => handleUpdatePending(item.tempId, { downloadKey: e.target.value.toUpperCase() })}
+                              className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50/50 font-mono font-bold text-slate-900 uppercase text-xs sm:text-sm"
+                            />
+                          </>
+                        ) : (
+                          <div>
+                            <span className="text-[10px] font-bold text-emerald-800 uppercase block mb-1">
+                              Acceso Producto Gratuito:
+                            </span>
+                            <div className="w-full px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 font-bold text-xs flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span>Descarga Libre (No ocupa clave)</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -570,7 +584,7 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[11px] font-bold text-slate-600 mr-1">Precio:</span>
+                        <span className="text-[11px] font-bold text-slate-600 mr-1">Modalidad:</span>
                         <button
                           type="button"
                           onClick={() => handleUpdatePending(item.tempId, { price: 0 })}
@@ -580,7 +594,7 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
                               : 'bg-slate-100 text-slate-600 hover:bg-emerald-50'
                           }`}
                         >
-                          Gratis ($0)
+                          Gratis (Sin Clave)
                         </button>
                         <button
                           type="button"
@@ -591,7 +605,7 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
                               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                           }`}
                         >
-                          $20 pesos
+                          $20 pesos (Con Clave)
                         </button>
 
                         <button
@@ -640,22 +654,31 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
               </button>
             </div>
             <div className="space-y-1.5 max-h-36 overflow-y-auto">
-              {recentlySaved.map((pdf) => (
-                <div
-                  key={pdf.id}
-                  className="bg-white px-3 py-2 rounded-xl border border-emerald-200 flex items-center justify-between text-xs"
-                >
-                  <span className="font-bold text-slate-800 truncate">{pdf.title}</span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="font-mono text-[11px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-bold">
-                      Clave: {pdf.downloadKey}
-                    </span>
-                    <span className="font-bold text-emerald-700">
-                      {Number(pdf.price) === 0 ? 'Gratis ($0)' : '$20 MXN'}
-                    </span>
+              {recentlySaved.map((pdf) => {
+                const isFreeSaved = Number(pdf.price) === 0;
+                return (
+                  <div
+                    key={pdf.id}
+                    className="bg-white px-3 py-2 rounded-xl border border-emerald-200 flex items-center justify-between text-xs"
+                  >
+                    <span className="font-bold text-slate-800 truncate">{pdf.title}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!isFreeSaved ? (
+                        <span className="font-mono text-[11px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-bold">
+                          Clave: {pdf.downloadKey}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-bold">
+                          Sin Clave (Descarga Libre)
+                        </span>
+                      )}
+                      <span className="font-bold text-emerald-700">
+                        {isFreeSaved ? 'Gratis ($0)' : '$20 MXN'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -663,7 +686,7 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
         {/* Optional Manual Registration */}
         <div className="border-t border-slate-200 pt-4">
           <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">
-            O registra un PDF manualmente escribiendo su título y clave:
+            O registra un PDF manualmente escribiendo su título y modalidad:
           </h4>
           <form onSubmit={handleManualSubmit} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
             <div className="sm:col-span-4">
@@ -690,25 +713,33 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
             </div>
 
             <div className="sm:col-span-2">
-              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Clave Descarga</label>
-              <input
-                type="text"
-                value={manualKey}
-                onChange={(e) => setManualKey(e.target.value.toUpperCase())}
-                className="w-full px-2.5 py-2 rounded-xl border border-amber-300 bg-amber-50/40 text-xs font-mono font-bold uppercase"
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Precio</label>
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Modalidad</label>
               <select
                 value={manualPrice}
                 onChange={(e) => setManualPrice(Number(e.target.value))}
                 className="w-full px-2 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white"
               >
-                <option value={0}>Gratis ($0)</option>
-                <option value={20}>$20 pesos</option>
+                <option value={0}>Gratis (Sin Clave)</option>
+                <option value={20}>$20 pesos (Con Clave)</option>
               </select>
+            </div>
+
+            <div className="sm:col-span-2">
+              {manualPrice > 0 ? (
+                <>
+                  <label className="text-[10px] font-bold text-amber-800 uppercase block mb-1">Clave ($20)</label>
+                  <input
+                    type="text"
+                    value={manualKey}
+                    onChange={(e) => setManualKey(e.target.value.toUpperCase())}
+                    className="w-full px-2.5 py-2 rounded-xl border border-amber-300 bg-amber-50/40 text-xs font-mono font-bold uppercase"
+                  />
+                </>
+              ) : (
+                <div className="px-2.5 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-[11px] font-bold text-center">
+                  Sin Clave
+                </div>
+              )}
             </div>
 
             <div className="sm:col-span-2">
