@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Minus, ShoppingCart, Star, Sparkles, Tag, Edit3, Trash2, Check, Palette, Camera } from 'lucide-react';
 import { Product } from '../types';
 
@@ -27,6 +27,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const [isEditingPrice, setIsEditingPrice] = useState<boolean>(false);
   const [tempPrice, setTempPrice] = useState<string>(String(product.price));
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setTempPrice(String(product.price));
+  }, [product.price]);
 
   const handleIncrement = () => setQuantity(prev => prev + 1);
   const handleDecrement = () => setQuantity(prev => (prev > 1 ? prev - 1 : 1));

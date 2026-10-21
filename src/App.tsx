@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Product, PdfDocument, CartItem, MultiUserPresence } from './types';
 import { dbStorage } from './services/dbStorage';
 import { pdfFileStore } from './services/pdfFileStore';
@@ -12,7 +12,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { AddProductModal } from './components/AddProductModal';
 import { AddPdfModal } from './components/AddPdfModal';
 import { Footer } from './components/Footer';
-import { ShieldCheck, Lock, Users } from 'lucide-react';
+import { ShieldCheck, Lock, Users, CheckCircle2, RefreshCw } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'catalog' | 'pdfs' | 'admin'>('catalog');
@@ -20,6 +20,7 @@ export default function App() {
   // Database State (preserved across reloads & synced across multiple users)
   const [products, setProducts] = useState<Product[]>(() => dbStorage.getProducts());
   const [pdfs, setPdfs] = useState<PdfDocument[]>(() => dbStorage.getPdfs());
+  const [pageRefreshMessage, setPageRefreshMessage] = useState<string>('');
 
   // Multi-user presence state
   const [presence, setPresence] = useState<MultiUserPresence>({
@@ -42,6 +43,55 @@ export default function App() {
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState<boolean>(false);
   const [isAddPdfModalOpen, setIsAddPdfModalOpen] = useState<boolean>(false);
 
+  // Helper to immediately refresh all page data from dbStorage & show live update confirmation
+  const refreshPageData = useCallback((notice?: string) => {
+    const freshProducts = dbStorage.getProducts();
+    const freshPdfs = dbStorage.getPdfs();
+    setProducts([...freshProducts]);
+    setPdfs([...freshPdfs]);
+
+    // Keep cart items synchronized if any product price/name/photo was updated
+    setCartItems((prev) =>
+      prev.map((item) => {
+        const updatedProd = freshProducts.find((p) => p.id === item.product.id);
+        return updatedProd ? { ...item, product: updatedProd } : item;
+      })
+    );
+
+    if (notice) {
+      setPageRefreshMessage(notice);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!pageRefreshMessage) return;
+    const timer = setTimeout(() => {
+      setPageRefreshMessage('');
+    }, 3800);
+    return () => clearTimeout(timer);
+  }, [pageRefreshMessage]);
+
+  // Listen to custom 'shelo-db-updated' and cross-tab 'storage' events so the page
+  // always updates automatically the instant any Product or PDF is saved!
+  useEffect(() => {
+    const handleCustomDbUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<{ type?: string; message?: string }>;
+      refreshPageData(customEvent.detail?.message);
+    };
+
+    const handleCrossTabStorage = () => {
+      refreshPageData();
+    };
+
+    window.addEventListener('shelo-db-updated', handleCustomDbUpdate);
+    window.addEventListener('storage', handleCrossTabStorage);
+
+    return () => {
+      window.removeEventListener('shelo-db-updated', handleCustomDbUpdate);
+      window.removeEventListener('storage', handleCrossTabStorage);
+    };
+  }, [refreshPageData]);
+
   // 1. Non-destructively sync local PDFs & Products with Multi-User Server on mount
   // and subscribe to real-time updates via Server-Sent Events (SSE)
   useEffect(() => {
@@ -52,8 +102,8 @@ export default function App() {
     // Merge local storage with server so nothing added previously is ever removed
     void dbStorage.syncWithServer().then((synced) => {
       if (!isMounted || !synced) return;
-      setProducts(synced.products);
-      setPdfs(synced.pdfs);
+      setProducts([...synced.products]);
+      setPdfs([...synced.pdfs]);
       if (synced.presence) {
         setPresence(synced.presence);
       }
@@ -94,11 +144,11 @@ export default function App() {
           if (!isMounted) return;
           if (Array.isArray(data.products) && data.products.length > 0) {
             dbStorage.saveProductsLocalOnly(data.products);
-            setProducts(dbStorage.getProducts());
+            setProducts([...dbStorage.getProducts()]);
           }
           if (Array.isArray(data.pdfs) && data.pdfs.length > 0) {
             dbStorage.savePdfsLocalOnly(data.pdfs);
-            setPdfs(dbStorage.getPdfs());
+            setPdfs([...dbStorage.getPdfs()]);
           }
           if (data.presence) {
             setPresence(data.presence);
@@ -203,27 +253,27 @@ export default function App() {
     setCartItems([]);
   };
 
-  // Product Operations
+  // Product Operations (Immediately updates the page state)
   const handleAddProduct = (productData: Omit<Product, 'id'>) => {
-    dbStorage.addProduct(productData);
-    setProducts(dbStorage.getProducts());
+    const created = dbStorage.addProduct(productData);
+    refreshPageData(`¡Página actualizada! Producto "${created.name}" guardado y visible en el catálogo.`);
   };
 
   const handleUpdateProduct = (product: Product) => {
     dbStorage.updateProduct(product);
-    setProducts(dbStorage.getProducts());
+    refreshPageData(`¡Página actualizada! Se guardaron los cambios en "${product.name}".`);
   };
 
   const handleDeleteProduct = (id: string) => {
     dbStorage.deleteProduct(id);
-    setProducts(dbStorage.getProducts());
+    refreshPageData('¡Página actualizada! Producto eliminado del catálogo.');
   };
 
-  // PDF Operations
+  // PDF Operations (Immediately updates the page state)
   const handleAddPdf = (pdfData: Omit<PdfDocument, 'id' | 'uploadedAt'>) => {
     const result = dbStorage.addPdf(pdfData);
     if (result.success) {
-      setPdfs(dbStorage.getPdfs());
+      refreshPageData(`¡Página actualizada! PDF "${result.pdf?.title || pdfData.title}" guardado en la página.`);
     }
     return result;
   };
@@ -231,26 +281,29 @@ export default function App() {
   const handleAddPdfsBatch = (pdfList: Array<Omit<PdfDocument, 'id' | 'uploadedAt'>>) => {
     const result = dbStorage.addPdfsBatch(pdfList);
     if (result.success) {
-      setPdfs(dbStorage.getPdfs());
+      refreshPageData(
+        result.addedPdfs.length === 1
+          ? `¡Página actualizada! PDF "${result.addedPdfs[0].title}" guardado en la página.`
+          : `¡Página actualizada! Se guardaron ${result.addedPdfs.length} PDFs en la página.`
+      );
     }
     return result;
   };
 
   const handleUpdatePdf = (pdf: PdfDocument) => {
     dbStorage.updatePdf(pdf);
-    setPdfs(dbStorage.getPdfs());
+    refreshPageData(`¡Página actualizada! Cambios guardados en el PDF "${pdf.title}".`);
   };
 
   const handleDeletePdf = (id: string) => {
     dbStorage.deletePdf(id);
     void pdfFileStore.deleteFile(id);
-    setPdfs(dbStorage.getPdfs());
+    refreshPageData('¡Página actualizada! PDF eliminado.');
   };
 
   const handleResetDefaults = () => {
     dbStorage.resetDefaults();
-    setProducts(dbStorage.getProducts());
-    setPdfs(dbStorage.getPdfs());
+    refreshPageData('¡Página actualizada! Se restauraron los datos predeterminados.');
   };
 
   const totalCartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -258,6 +311,25 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 antialiased selection:bg-emerald-200 selection:text-emerald-900">
       
+      {/* Live Automatic Page Update Toast Banner whenever a Product or PDF is saved */}
+      {pageRefreshMessage && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-md bg-emerald-900 text-white px-4 py-3 rounded-2xl shadow-2xl border-2 border-amber-400 flex items-center gap-3 animate-fade-in">
+          <div className="w-8 h-8 rounded-xl bg-emerald-700 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-amber-300" />
+          </div>
+          <div className="flex-1 text-xs font-bold leading-snug">
+            {pageRefreshMessage}
+          </div>
+          <button
+            type="button"
+            onClick={() => setPageRefreshMessage('')}
+            className="text-[11px] text-emerald-200 hover:text-white font-bold px-2 py-1"
+          >
+            OK
+          </button>
+        </div>
+      )}
+
       {/* Top Admin Active Banner if unlocked ONLY on this session */}
       {isAdminUnlocked && (
         <div className="bg-amber-500 text-slate-950 px-4 py-1.5 text-xs font-bold flex items-center justify-between shadow-sm z-50">
@@ -265,7 +337,7 @@ export default function App() {
             <ShieldCheck className="w-4 h-4 text-slate-950 shrink-0" />
             <span>Sesión de Administrador Activa (Clave ****)</span>
             <span className="hidden md:inline font-normal text-slate-900">
-              — Los demás usuarios conectados ven la tienda normal de cliente. Al cerrar la página tu sesión se cierra automáticamente.
+              — Descarga libre sin clave en todos los PDFs ($20 y Gratis). Al guardar un producto o PDF la página se actualiza al instante.
             </span>
           </div>
 
@@ -274,6 +346,16 @@ export default function App() {
               <Users className="w-3 h-3" />
               <span>{presence.totalOnline} {presence.totalOnline === 1 ? 'usuario' : 'usuarios'} en línea</span>
             </span>
+
+            <button
+              type="button"
+              onClick={() => refreshPageData('¡Página actualizada manualmente al instante!')}
+              className="px-2 py-0.5 bg-white/80 hover:bg-white text-slate-950 rounded-md text-[11px] font-bold flex items-center gap-1"
+              title="Actualizar vista de la página"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span className="hidden sm:inline">Actualizar</span>
+            </button>
 
             {activeTab !== 'admin' && (
               <button

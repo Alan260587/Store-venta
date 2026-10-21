@@ -56,6 +56,20 @@ function normalizeProductsList(parsed: Product[]): { normalized: Product[]; upda
   return { normalized, updatedFlag };
 }
 
+function notifyPageUpdate(type: 'products' | 'pdfs' | 'all', message?: string) {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('shelo-db-updated', {
+          detail: { type, message, timestamp: Date.now() }
+        })
+      );
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function pushStateToServer(payload: {
   products?: Product[];
   pdfs?: PdfDocument[];
@@ -96,21 +110,21 @@ export const dbStorage = {
       const stored = localStorage.getItem(PRODUCTS_KEY);
       if (!stored) {
         localStorage.setItem(PRODUCTS_KEY, JSON.stringify(INITIAL_PRODUCTS));
-        return INITIAL_PRODUCTS;
+        return [...INITIAL_PRODUCTS];
       }
       const parsed: Product[] = JSON.parse(stored);
       if (!Array.isArray(parsed) || parsed.length === 0) {
         localStorage.setItem(PRODUCTS_KEY, JSON.stringify(INITIAL_PRODUCTS));
-        return INITIAL_PRODUCTS;
+        return [...INITIAL_PRODUCTS];
       }
       const { normalized, updatedFlag } = normalizeProductsList(parsed);
       if (updatedFlag) {
         this.saveProductsLocalOnly(normalized);
       }
-      return normalized;
+      return [...normalized];
     } catch (e) {
       console.error('Error reading products from localStorage:', e);
-      return INITIAL_PRODUCTS;
+      return [...INITIAL_PRODUCTS];
     }
   },
 
@@ -124,9 +138,10 @@ export const dbStorage = {
     }
   },
 
-  saveProducts(products: Product[], deletedProductId?: string): boolean {
+  saveProducts(products: Product[], deletedProductId?: string, noticeMsg?: string): boolean {
     const ok = this.saveProductsLocalOnly(products);
     pushStateToServer({ products, deletedProductId });
+    notifyPageUpdate('products', noticeMsg || '¡Página actualizada con los cambios del producto!');
     return ok;
   },
 
@@ -137,20 +152,20 @@ export const dbStorage = {
       id: `p-custom-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
     };
     const updated = [newProduct, ...products];
-    this.saveProducts(updated);
+    this.saveProducts(updated, undefined, `¡Página actualizada! Producto "${newProduct.name}" guardado correctamente.`);
     return newProduct;
   },
 
   updateProduct(updatedProduct: Product): void {
     const products = this.getProducts();
     const updated = products.map(p => (p.id === updatedProduct.id ? updatedProduct : p));
-    this.saveProducts(updated);
+    this.saveProducts(updated, undefined, `¡Página actualizada! Producto "${updatedProduct.name}" actualizado.`);
   },
 
   deleteProduct(id: string): void {
     const products = this.getProducts();
     const updated = products.filter(p => p.id !== id);
-    this.saveProducts(updated, id);
+    this.saveProducts(updated, id, '¡Página actualizada! Producto eliminado del catálogo.');
   },
 
   getPdfs(): PdfDocument[] {
@@ -202,10 +217,11 @@ export const dbStorage = {
     }
   },
 
-  savePdfs(pdfs: PdfDocument[], deletedPdfId?: string): boolean {
+  savePdfs(pdfs: PdfDocument[], deletedPdfId?: string, noticeMsg?: string): boolean {
     const ok = this.savePdfsLocalOnly(pdfs);
     const sanitized = this.getPdfs();
     pushStateToServer({ pdfs: sanitized, deletedPdfId });
+    notifyPageUpdate('pdfs', noticeMsg || '¡Página actualizada con los cambios del PDF!');
     return ok;
   },
 
@@ -234,7 +250,11 @@ export const dbStorage = {
       };
 
       const updated = [newPdf, ...pdfs];
-      const saved = this.savePdfs(updated);
+      const saved = this.savePdfs(
+        updated,
+        undefined,
+        `¡Página actualizada! PDF "${newPdf.title}" guardado correctamente.`
+      );
       if (!saved) {
         return {
           success: false,
@@ -282,7 +302,13 @@ export const dbStorage = {
       });
 
       const updated = [...createdPdfs, ...currentPdfs];
-      const saved = this.savePdfs(updated);
+      const saved = this.savePdfs(
+        updated,
+        undefined,
+        createdPdfs.length === 1
+          ? `¡Página actualizada! PDF "${createdPdfs[0].title}" guardado.`
+          : `¡Página actualizada! Se guardaron ${createdPdfs.length} archivos PDF.`
+      );
       if (!saved) {
         return {
           success: false,
@@ -319,19 +345,20 @@ export const dbStorage = {
         ? { ...updatedPdf, title: cleanTitle, price: cleanPrice, downloadKey: cleanKey }
         : p
     );
-    this.savePdfs(updated);
+    this.savePdfs(updated, undefined, `¡Página actualizada! PDF "${cleanTitle}" actualizado.`);
   },
 
   deletePdf(id: string): void {
     const pdfs = this.getPdfs();
     const updated = pdfs.filter(p => p.id !== id);
-    this.savePdfs(updated, id);
+    this.savePdfs(updated, id, '¡Página actualizada! PDF eliminado.');
   },
 
   resetDefaults(): void {
     try {
       localStorage.setItem(PRODUCTS_KEY, JSON.stringify(INITIAL_PRODUCTS));
       localStorage.setItem(PDFS_KEY, JSON.stringify(INITIAL_PDFS));
+      notifyPageUpdate('all', '¡Página actualizada con los datos originales!');
       void fetch('/api/reset-defaults', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
