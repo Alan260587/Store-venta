@@ -156,6 +156,10 @@ async function uploadBlobToFirestoreChunks(pdfId: string, blob: Blob): Promise<b
       try {
         await setDoc(doc(db, 'pdfChunks', chunkId), payload);
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('Quota limit exceeded') || msg.includes('Quota exceeded') || msg.includes('resource-exhausted')) {
+          return false;
+        }
         handleFirestoreError(err, OperationType.WRITE, `pdfChunks/${chunkId}`);
       }
     }
@@ -320,10 +324,10 @@ export const pdfFileStore = {
       const response = await fetch(`/api/pdf-file/${encodeURIComponent(pdfId)}`, {
         cache: 'no-store'
       });
-      if (response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/pdf')) {
         const serverBlob = await response.blob();
         if (serverBlob.size > 0) {
-          // Cache locally in IndexedDB
           try {
             const idb = await openDatabase();
             const tx = idb.transaction(STORE_NAME, 'readwrite');
@@ -333,6 +337,22 @@ export const pdfFileStore = {
             // ignore
           }
           return serverBlob;
+        }
+      }
+    } catch {
+      // Fall through to static public/pdfs and Firebase Cloud Firestore chunks
+    }
+
+    // 2b. Try static public/pdfs/:id.pdf (for static hosting / GitHub Pages)
+    try {
+      const staticRes = await fetch(`${import.meta.env.BASE_URL}pdfs/${encodeURIComponent(pdfId)}.pdf`, {
+        cache: 'no-store'
+      });
+      const staticType = staticRes.headers.get('content-type') || '';
+      if (staticRes.ok && staticType.includes('application/pdf')) {
+        const staticBlob = await staticRes.blob();
+        if (staticBlob.size > 0) {
+          return staticBlob;
         }
       }
     } catch {

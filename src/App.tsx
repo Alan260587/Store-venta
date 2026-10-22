@@ -114,8 +114,8 @@ export default function App() {
     const clientId = dbStorage.getSessionClientId();
     const initialRole = dbStorage.isAdminUnlocked() ? 'admin' : 'client';
 
-    // Start Firebase Cloud Firestore real-time listeners & immediate non-destructive merge on mount
-    dbStorage.startFirestoreRealtimeSync();
+    // Start Firebase Cloud Firestore real-time listeners & immediate Cloud-First reconciliation on mount
+    const unsubscribeFirestore = dbStorage.startFirestoreRealtimeSync();
     void performCrossDeviceSync();
 
     // Connect to real-time multi-user event stream
@@ -129,10 +129,17 @@ export default function App() {
         try {
           const data = JSON.parse(event.data);
           if (!isMounted) return;
+          dbStorage.mergeIncomingServerData({
+            products: data.products,
+            pdfs: data.pdfs,
+            deletedProductIds: data.deletedProductIds,
+            deletedPdfIds: data.deletedPdfIds
+          });
+          setProducts([...dbStorage.getProducts()]);
+          setPdfs([...dbStorage.getPdfs()]);
           if (data.presence) {
             setPresence(data.presence);
           }
-          // Run non-destructive sync on init so local + server items are merged
           void performCrossDeviceSync();
         } catch {
           // ignore parse errors
@@ -192,6 +199,7 @@ export default function App() {
     return () => {
       isMounted = false;
       clearInterval(syncInterval);
+      unsubscribeFirestore();
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       if (eventSource) {
