@@ -110,7 +110,8 @@ export default function App() {
     const clientId = dbStorage.getSessionClientId();
     const initialRole = dbStorage.isAdminUnlocked() ? 'admin' : 'client';
 
-    // Immediate non-destructive merge on mount
+    // Start Firebase Cloud Firestore real-time listeners & immediate non-destructive merge on mount
+    dbStorage.startFirestoreRealtimeSync();
     void performCrossDeviceSync();
 
     // Connect to real-time multi-user event stream
@@ -149,14 +150,14 @@ export default function App() {
         try {
           const data = JSON.parse(event.data);
           if (!isMounted) return;
-          if (Array.isArray(data.products) && data.products.length > 0) {
-            dbStorage.saveProductsLocalOnly(data.products);
-            setProducts([...dbStorage.getProducts()]);
-          }
-          if (Array.isArray(data.pdfs) && data.pdfs.length > 0) {
-            dbStorage.savePdfsLocalOnly(data.pdfs);
-            setPdfs([...dbStorage.getPdfs()]);
-          }
+          dbStorage.mergeIncomingServerData({
+            products: data.products,
+            pdfs: data.pdfs,
+            deletedProductIds: data.deletedProductIds,
+            deletedPdfIds: data.deletedPdfIds
+          });
+          setProducts([...dbStorage.getProducts()]);
+          setPdfs([...dbStorage.getPdfs()]);
           if (data.presence) {
             setPresence(data.presence);
           }
@@ -424,6 +425,12 @@ export default function App() {
         isAdminUnlocked={isAdminUnlocked}
         openAdminModal={() => setIsAdminModalOpen(true)}
         presence={presence}
+        totalProductsCount={products.length}
+        totalPdfsCount={pdfs.length}
+        onSyncAllDevices={async () => {
+          await performCrossDeviceSync();
+          refreshPageData('¡Todo sincronizado! Viendo todos los productos y PDFs de Laptop, Celular e iOS en esta misma página.');
+        }}
       />
 
       {/* Main View Content */}

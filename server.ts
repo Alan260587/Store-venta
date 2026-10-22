@@ -2,19 +2,26 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
-import { INITIAL_PRODUCTS } from './src/data/initialProducts';
-import { INITIAL_PDFS } from './src/data/initialPdfs';
+import { INITIAL_PRODUCTS } from './src/data/initialProducts.ts';
+import { INITIAL_PDFS } from './src/data/initialPdfs.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DATA_DIR = path.join(__dirname, '.data');
 const PDF_FILES_DIR = path.join(DATA_DIR, 'pdfs');
+const PUBLIC_PDF_DIR = path.join(__dirname, 'public', 'pdfs');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
 
-// Unified Admin Key across all devices (Laptop, Android, iOS)
-const UNIFIED_ADMIN_KEY = '1987';
+// Unified Admin Keys across all devices (Laptop, Android, iOS)
+const VALID_ADMIN_KEYS = new Set(['1987', '2026']);
+
+const initialProductsById = new Map<string, any>(
+  INITIAL_PRODUCTS.map((p) => [p.id, p])
+);
+const initialPdfsById = new Map<string, any>(
+  INITIAL_PDFS.map((p) => [p.id, p])
+);
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -26,6 +33,31 @@ if (!fs.existsSync(PDF_FILES_DIR)) {
 function getTimestampFromId(id: string): number {
   const match = String(id || '').match(/(\d{13})/);
   return match ? Number(match[1]) : 0;
+}
+
+function isProductModifiedFromDefault(item: any): boolean {
+  const def = initialProductsById.get(item?.id);
+  if (!def) return true;
+  return (
+    item.name !== def.name ||
+    Number(item.price) !== Number(def.price) ||
+    item.description !== def.description ||
+    item.image !== def.image ||
+    item.size !== def.size ||
+    item.category !== def.category
+  );
+}
+
+function isPdfModifiedFromDefault(item: any): boolean {
+  const def = initialPdfsById.get(item?.id);
+  if (!def) return true;
+  return (
+    item.title !== def.title ||
+    Number(item.price) !== Number(def.price) ||
+    item.downloadKey !== def.downloadKey ||
+    item.description !== def.description ||
+    item.category !== def.category
+  );
 }
 
 function mergeProductsList(
@@ -66,8 +98,10 @@ function mergeProductsList(
         map.set(inc.id, inc);
         changed = true;
       } else if (incTime === prevTime && JSON.stringify(prev) !== JSON.stringify(inc)) {
-        // If incoming has a newer edit without timestamp difference, prefer the one with updatedAt or non-default
-        if (inc.updatedAt && !prev.updatedAt) {
+        if (
+          (inc.updatedAt && !prev.updatedAt) ||
+          (isProductModifiedFromDefault(inc) && !isProductModifiedFromDefault(prev))
+        ) {
           map.set(inc.id, inc);
           changed = true;
         }
@@ -116,7 +150,8 @@ function mergePdfsList(
 
   for (const item of existingList) {
     if (item && item.id && !deletedSet.has(item.id)) {
-      map.set(item.id, item);
+      const { fileData, ...cleanExisting } = item;
+      map.set(cleanExisting.id, cleanExisting);
     } else if (item && item.id && deletedSet.has(item.id)) {
       changed = true;
     }
@@ -136,7 +171,10 @@ function mergePdfsList(
         map.set(cleanInc.id, cleanInc);
         changed = true;
       } else if (incTime === prevTime && JSON.stringify(prev) !== JSON.stringify(cleanInc)) {
-        if (cleanInc.updatedAt && !prev.updatedAt) {
+        if (
+          (cleanInc.updatedAt && !prev.updatedAt) ||
+          (isPdfModifiedFromDefault(cleanInc) && !isPdfModifiedFromDefault(prev))
+        ) {
           map.set(cleanInc.id, cleanInc);
           changed = true;
         }
@@ -150,6 +188,35 @@ function mergePdfsList(
       map.set(initPdf.id, initPdf);
       changed = true;
     }
+  }
+
+  // Recover any orphaned PDF files present in .data/pdfs/ that are not deleted
+  try {
+    if (fs.existsSync(PDF_FILES_DIR)) {
+      for (const name of fs.readdirSync(PDF_FILES_DIR)) {
+        if (!name.endsWith('.pdf')) continue;
+        const pdfId = name.replace(/\.pdf$/i, '');
+        if (pdfId && !deletedSet.has(pdfId) && !map.has(pdfId)) {
+          const stat = fs.statSync(path.join(PDF_FILES_DIR, name));
+          const mb = Math.max(0.1, stat.size / (1024 * 1024)).toFixed(1);
+          map.set(pdfId, {
+            id: pdfId,
+            title: `Catálogo PDF (${pdfId.slice(0, 12)})`,
+            description: 'Documento PDF recuperado y sincronizado en la página.',
+            pagesCount: 1,
+            price: 20,
+            downloadKey: 'SN-2026',
+            uploadedAt: new Date(stat.mtimeMs).toISOString().split('T')[0],
+            fileSize: `${mb} MB`,
+            category: 'Catálogo Oficial',
+            updatedAt: Math.round(stat.mtimeMs)
+          });
+          changed = true;
+        }
+      }
+    }
+  } catch {
+    // ignore
   }
 
   const allPdfs = Array.from(map.values());
@@ -184,15 +251,19 @@ function loadStore() {
       const rawProducts = Array.isArray(parsed.products) ? parsed.products : [];
       const rawPdfs = Array.isArray(parsed.pdfs) ? parsed.pdfs : [];
 
-      const { merged: products } = mergeProductsList(rawProducts, [], deletedProductIds);
-      const { merged: pdfs } = mergePdfsList(rawPdfs, [], deletedPdfIds);
+      const { merged: products, changed: prodChanged } = mergeProductsList(rawProducts, [], deletedProductIds);
+      const { merged: pdfs, changed: pdfChanged } = mergePdfsList(rawPdfs, [], deletedPdfIds);
 
-      return {
+      const loaded = {
         products,
         pdfs,
         deletedProductIds,
         deletedPdfIds
       };
+      if (prodChanged || pdfChanged) {
+        saveStore(loaded);
+      }
+      return loaded;
     }
   } catch (e) {
     console.warn('Could not read store.json, starting fresh:', e);
@@ -243,15 +314,26 @@ function getPresenceStats() {
 }
 
 function getStoredPdfFileIds(): string[] {
+  const ids = new Set<string>();
   try {
-    if (!fs.existsSync(PDF_FILES_DIR)) return [];
-    return fs
-      .readdirSync(PDF_FILES_DIR)
-      .filter((name) => name.endsWith('.pdf'))
-      .map((name) => name.replace(/\.pdf$/i, ''));
+    if (fs.existsSync(PDF_FILES_DIR)) {
+      for (const name of fs.readdirSync(PDF_FILES_DIR)) {
+        if (name.endsWith('.pdf')) {
+          ids.add(name.replace(/\.pdf$/i, ''));
+        }
+      }
+    }
+    if (fs.existsSync(PUBLIC_PDF_DIR)) {
+      for (const name of fs.readdirSync(PUBLIC_PDF_DIR)) {
+        if (name.endsWith('.pdf')) {
+          ids.add(name.replace(/\.pdf$/i, ''));
+        }
+      }
+    }
   } catch {
-    return [];
+    // ignore
   }
+  return Array.from(ids);
 }
 
 function broadcastEvent(eventName: string, payload: unknown) {
@@ -273,6 +355,8 @@ function broadcastState() {
   broadcastEvent('state:update', {
     products: serverStore.products,
     pdfs: serverStore.pdfs,
+    deletedProductIds: serverStore.deletedProductIds,
+    deletedPdfIds: serverStore.deletedPdfIds,
     presence: getPresenceStats(),
     storedPdfIds: getStoredPdfFileIds()
   });
@@ -295,8 +379,11 @@ async function startServer() {
 
   // Unified Admin Key verification across all devices (Laptop, Android, iOS)
   app.post('/api/verify-admin', (req, res) => {
-    const rawKey = String(req.body?.key || '').trim();
-    const valid = rawKey === UNIFIED_ADMIN_KEY;
+    const rawKey = String(req.body?.key || '')
+      .replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+      .replace(/\s+/g, '')
+      .trim();
+    const valid = VALID_ADMIN_KEYS.has(rawKey);
     res.json({ ok: valid });
   });
 
@@ -322,6 +409,8 @@ async function startServer() {
       `event: init\ndata: ${JSON.stringify({
         products: serverStore.products,
         pdfs: serverStore.pdfs,
+        deletedProductIds: serverStore.deletedProductIds,
+        deletedPdfIds: serverStore.deletedPdfIds,
         presence: getPresenceStats(),
         storedPdfIds: getStoredPdfFileIds()
       })}\n\n`
@@ -377,13 +466,15 @@ async function startServer() {
     res.json({
       products: serverStore.products,
       pdfs: serverStore.pdfs,
+      deletedProductIds: serverStore.deletedProductIds,
+      deletedPdfIds: serverStore.deletedPdfIds,
       presence: getPresenceStats(),
       storedPdfIds: getStoredPdfFileIds()
     });
   });
 
-  // 3. Non-destructive Sync: merges client's localStorage PDFs & products with server store by timestamp
-  // Guarantees Laptop, Android, and iOS always converge to the exact same list!
+  // 3. Non-destructive Sync: merges client's localStorage PDFs & products with server store
+  // Guarantees Laptop, Android, and iOS always converge to the exact same unified list!
   app.post('/api/sync', (req, res) => {
     const clientProducts = Array.isArray(req.body?.products) ? req.body.products : [];
     const clientPdfs = Array.isArray(req.body?.pdfs) ? req.body.pdfs : [];
@@ -409,13 +500,15 @@ async function startServer() {
     res.json({
       products: serverStore.products,
       pdfs: serverStore.pdfs,
+      deletedProductIds: serverStore.deletedProductIds,
+      deletedPdfIds: serverStore.deletedPdfIds,
       presence: getPresenceStats(),
       storedPdfIds: getStoredPdfFileIds()
     });
   });
 
   // 4. Save/Update from Admin actions on ANY device (Laptop, Android, iOS)
-  // Uses smart timestamp merge so saving on a cell phone NEVER overwrites items added on laptop and vice versa!
+  // Uses smart union merge so saving on a cell phone NEVER overwrites items added on laptop or iOS!
   app.post('/api/update-state', (req, res) => {
     const { products, pdfs, deletedProductId, deletedPdfId } = req.body || {};
 
@@ -457,6 +550,8 @@ async function startServer() {
       ok: true,
       products: serverStore.products,
       pdfs: serverStore.pdfs,
+      deletedProductIds: serverStore.deletedProductIds,
+      deletedPdfIds: serverStore.deletedPdfIds,
       presence: getPresenceStats(),
       storedPdfIds: getStoredPdfFileIds()
     });
@@ -476,7 +571,9 @@ async function startServer() {
     res.json({
       ok: true,
       products: serverStore.products,
-      pdfs: serverStore.pdfs
+      pdfs: serverStore.pdfs,
+      deletedProductIds: [],
+      deletedPdfIds: []
     });
   });
 
@@ -523,8 +620,15 @@ async function startServer() {
 
   app.get('/api/pdf-file/:id', (req, res) => {
     const pdfId = String(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
-    const filePath = path.join(PDF_FILES_DIR, `${pdfId}.pdf`);
-    if (fs.existsSync(filePath)) {
+    const dataFilePath = path.join(PDF_FILES_DIR, `${pdfId}.pdf`);
+    const publicFilePath = path.join(PUBLIC_PDF_DIR, `${pdfId}.pdf`);
+    const resolvedPath = fs.existsSync(dataFilePath)
+      ? dataFilePath
+      : fs.existsSync(publicFilePath)
+      ? publicFilePath
+      : null;
+
+    if (resolvedPath) {
       const rawTitle = String(req.query.title || pdfId)
         .replace(/[^a-zA-Z0-9_\-\s]/g, '')
         .trim()
@@ -533,7 +637,7 @@ async function startServer() {
       if (req.query.download === '1') {
         res.setHeader('Content-Disposition', `attachment; filename="${rawTitle}.pdf"`);
       }
-      res.sendFile(filePath);
+      res.sendFile(resolvedPath);
     } else {
       res.status(404).json({ ok: false });
     }
@@ -541,6 +645,7 @@ async function startServer() {
 
   // Vite middleware for development or static serving for production
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'

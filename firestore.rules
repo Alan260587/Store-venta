@@ -1,0 +1,311 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Default-Deny Safety Net (Pillar 1 / Phase 4.1)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers (Phase 3)
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'javieralanrodriguezyescas31@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Blueprint Validation Helpers (Pillar 2 - Anti-Update-Gap)
+    function isValidProduct(data) {
+      return data.keys().hasAll([
+          'id',
+          'clave',
+          'name',
+          'price',
+          'size',
+          'category',
+          'description',
+          'image',
+          'visibility',
+          'authorUid',
+          'updatedAtMs',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id',
+          'clave',
+          'name',
+          'price',
+          'size',
+          'category',
+          'description',
+          'image',
+          'isStarProduct',
+          'isNew',
+          'visibility',
+          'authorUid',
+          'updatedAtMs',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.clave is string && data.clave.size() >= 1 && data.clave.size() <= 40 &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 200 &&
+        data.price is number && data.price >= 0 && data.price <= 1000000 &&
+        data.size is string && data.size.size() >= 1 && data.size.size() <= 80 &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 1500 &&
+        data.image is string && data.image.size() >= 1 && data.image.size() <= 900000 &&
+        (!('isStarProduct' in data) || data.isStarProduct is bool) &&
+        (!('isNew' in data) || data.isNew is bool) &&
+        data.visibility is string && data.visibility.size() <= 20 && data.visibility == 'public' &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.updatedAtMs is number && data.updatedAtMs >= 0 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidPdfDocument(data) {
+      return data.keys().hasAll([
+          'id',
+          'title',
+          'description',
+          'pagesCount',
+          'price',
+          'downloadKey',
+          'uploadedAt',
+          'fileSize',
+          'category',
+          'visibility',
+          'authorUid',
+          'updatedAtMs',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id',
+          'title',
+          'description',
+          'pagesCount',
+          'price',
+          'downloadKey',
+          'uploadedAt',
+          'fileSize',
+          'category',
+          'visibility',
+          'authorUid',
+          'updatedAtMs',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 250 &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 1500 &&
+        data.pagesCount is number && data.pagesCount >= 1 && data.pagesCount <= 5000 &&
+        data.price is number && (data.price == 0 || data.price == 20) &&
+        data.downloadKey is string && data.downloadKey.size() >= 1 && data.downloadKey.size() <= 60 &&
+        data.uploadedAt is string && data.uploadedAt.size() >= 1 && data.uploadedAt.size() <= 40 &&
+        data.fileSize is string && data.fileSize.size() >= 1 && data.fileSize.size() <= 40 &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 100 &&
+        data.visibility is string && data.visibility.size() <= 20 && data.visibility == 'public' &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.updatedAtMs is number && data.updatedAtMs >= 0 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidDeletedRecord(data) {
+      return data.keys().hasAll([
+          'id',
+          'itemType',
+          'visibility',
+          'authorUid',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id',
+          'itemType',
+          'visibility',
+          'authorUid',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.itemType is string && data.itemType.size() <= 20 && (data.itemType == 'product' || data.itemType == 'pdf') &&
+        data.visibility is string && data.visibility.size() <= 20 && data.visibility == 'public' &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'role', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'role', 'createdAt', 'updatedAt']) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.role is string && data.role.size() <= 20 && data.role == 'admin' &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    // Collection 1: /products/{productId}
+    match /products/{productId} {
+      allow get: if isValidId(productId) && resource.data.visibility == 'public';
+      allow list: if resource.data.visibility == 'public';
+
+      allow create: if isVerifiedUser() &&
+        isValidId(productId) &&
+        isValidProduct(incoming()) &&
+        incoming().id == productId &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(productId) &&
+        isValidProduct(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (
+            existing().authorUid == request.auth.uid &&
+            incoming().authorUid == existing().authorUid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'clave',
+              'name',
+              'price',
+              'size',
+              'category',
+              'description',
+              'image',
+              'isStarProduct',
+              'isNew',
+              'updatedAtMs',
+              'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(productId) &&
+        (isAdmin() || existing().authorUid == request.auth.uid);
+    }
+
+    // Collection 2: /pdfs/{pdfId}
+    match /pdfs/{pdfId} {
+      allow get: if isValidId(pdfId) && resource.data.visibility == 'public';
+      allow list: if resource.data.visibility == 'public';
+
+      allow create: if isVerifiedUser() &&
+        isValidId(pdfId) &&
+        isValidPdfDocument(incoming()) &&
+        incoming().id == pdfId &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(pdfId) &&
+        isValidPdfDocument(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (
+            existing().authorUid == request.auth.uid &&
+            incoming().authorUid == existing().authorUid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title',
+              'description',
+              'pagesCount',
+              'price',
+              'downloadKey',
+              'uploadedAt',
+              'fileSize',
+              'category',
+              'updatedAtMs',
+              'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(pdfId) &&
+        (isAdmin() || existing().authorUid == request.auth.uid);
+    }
+
+    // Collection 3: /deletedItems/{itemId}
+    match /deletedItems/{itemId} {
+      allow get: if isValidId(itemId) && resource.data.visibility == 'public';
+      allow list: if resource.data.visibility == 'public';
+
+      allow create: if isVerifiedUser() &&
+        isValidId(itemId) &&
+        isValidDeletedRecord(incoming()) &&
+        incoming().id == itemId &&
+        incoming().authorUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(itemId) &&
+        isValidDeletedRecord(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (
+            existing().authorUid == request.auth.uid &&
+            incoming().authorUid == existing().authorUid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['itemType', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(itemId) &&
+        isAdmin();
+    }
+
+    // Collection 4: /admins/{adminUid}
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if isAdmin() && resource.data.role == 'admin';
+
+      allow create: if isAdmin() &&
+        isValidId(adminUid) &&
+        isValidAdminRecord(incoming()) &&
+        incoming().uid == adminUid &&
+        incoming().createdAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(adminUid) &&
+        isValidAdminRecord(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt']);
+
+      allow delete: if isAdmin() && isValidId(adminUid);
+    }
+  }
+}

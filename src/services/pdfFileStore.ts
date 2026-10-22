@@ -4,6 +4,8 @@
  * so any device (Laptop, Android, iOS) sees and downloads the exact same PDF files.
  */
 
+import { countPdfPages } from '../utils/pdfParser';
+
 const DB_NAME = 'shelo_nabel_pdf_blobs_db';
 const STORE_NAME = 'pdf_files';
 const DB_VERSION = 1;
@@ -56,6 +58,22 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
     binary += String.fromCharCode.apply(null, Array.from(sub));
   }
   return btoa(binary);
+}
+
+function base64ToBlob(base64Data: string): Blob | null {
+  try {
+    const cleaned = base64Data.replace(/^data:application\/pdf;base64,/, '').trim();
+    if (!cleaned) return null;
+    const binaryStr = atob(cleaned);
+    const len = binaryStr.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return new Blob([bytes.buffer], { type: 'application/pdf' });
+  } catch {
+    return null;
+  }
 }
 
 async function uploadBufferToServer(pdfId: string, buffer: ArrayBuffer): Promise<boolean> {
@@ -120,6 +138,39 @@ async function getLocalBlobFromIdb(pdfId: string): Promise<Blob | null> {
   });
 }
 
+async function getAllIdbKeys(): Promise<string[]> {
+  const db = await openDb();
+  if (!db) return [];
+
+  return new Promise<string[]>((resolve) => {
+    const timer = setTimeout(() => {
+      try { db.close(); } catch {}
+      resolve([]);
+    }, 1500);
+
+    try {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAllKeys();
+      req.onsuccess = () => {
+        clearTimeout(timer);
+        try { db.close(); } catch {}
+        const keys = Array.isArray(req.result) ? req.result.map((k) => String(k)) : [];
+        resolve(keys);
+      };
+      req.onerror = () => {
+        clearTimeout(timer);
+        try { db.close(); } catch {}
+        resolve([]);
+      };
+    } catch {
+      clearTimeout(timer);
+      try { db.close(); } catch {}
+      resolve([]);
+    }
+  });
+}
+
 async function putLocalBlobInIdb(pdfId: string, blob: Blob): Promise<void> {
   const db = await openDb();
   if (!db) return;
@@ -179,14 +230,73 @@ export const pdfFileStore = {
   },
 
   /**
-   * Automatically uploads any PDFs stored in this device's local IndexedDB
-   * that are not yet stored on the shared server, ensuring Laptop, Android, and iOS
-   * all have access to previously uploaded PDF files.
+   * Converts legacy base64 fileData found in older localStorage versions into a Blob
+   * and stores it in IndexedDB + uploads to server so no legacy device PDF is lost.
+   */
+  async saveBase64DataUrl(pdfId: string, base64DataUrl: string): Promise<void> {
+    try {
+      const blob = base64ToBlob(base64DataUrl);
+      if (blob && blob.size > 0) {
+        await this.saveFile(pdfId, blob);
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  /**
+   * Inspects IndexedDB on this device (Laptop, Android, or iOS) for any stored PDF blobs
+   * whose metadata might have been overwritten earlier, and returns reconstructed metadata
+   * so no PDF uploaded on any device is ever stranded.
+   */
+  async recoverOrphanedIdbPdfs(
+    knownIds: Set<string>,
+    deletedIds: Set<string>
+  ): Promise<
+    Array<{
+      id: string;
+      pagesCount: number;
+      fileSizeFormatted: string;
+    }>
+  > {
+    const recovered: Array<{
+      id: string;
+      pagesCount: number;
+      fileSizeFormatted: string;
+    }> = [];
+    try {
+      const keys = await getAllIdbKeys();
+      for (const pdfId of keys) {
+        if (!pdfId || knownIds.has(pdfId) || deletedIds.has(pdfId)) continue;
+        const blob = await getLocalBlobFromIdb(pdfId);
+        if (!blob || blob.size === 0) continue;
+        try {
+          const fakeFile = new File([blob], `${pdfId}.pdf`, { type: 'application/pdf' });
+          const { pagesCount, fileSizeFormatted } = await countPdfPages(fakeFile);
+          recovered.push({ id: pdfId, pagesCount, fileSizeFormatted });
+        } catch {
+          const mb = Math.max(0.1, blob.size / (1024 * 1024)).toFixed(1);
+          recovered.push({ id: pdfId, pagesCount: 1, fileSizeFormatted: `${mb} MB` });
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return recovered;
+  },
+
+  /**
+   * Automatically scans ALL PDFs stored in this device's local IndexedDB
+   * (plus any passed localPdfIds) and uploads any that are not yet stored on the shared server,
+   * ensuring Laptop, Android, and iOS all have access to every uploaded PDF binary.
    */
   async syncLocalBlobsToServer(localPdfIds: string[], serverStoredIds: string[] = []): Promise<void> {
     try {
       const serverSet = new Set(serverStoredIds);
-      for (const pdfId of localPdfIds) {
+      const idbKeys = await getAllIdbKeys();
+      const allCandidateIds = Array.from(new Set([...localPdfIds, ...idbKeys]));
+
+      for (const pdfId of allCandidateIds) {
         if (!pdfId || serverSet.has(pdfId)) continue;
         const localBlob = await getLocalBlobFromIdb(pdfId);
         if (localBlob && localBlob.size > 0) {

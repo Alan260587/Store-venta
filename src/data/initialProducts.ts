@@ -1,5 +1,5 @@
-import { Product } from '../types';
-import { TIJERAS_WESTCOTT_IMG, CUADERNOS_ESCOLARES_IMG, CRAYONES_CRAYOLA_IMG } from '../utils/productImages';
+import type { Product } from '../types/index.ts';
+import { TIJERAS_WESTCOTT_IMG, CUADERNOS_ESCOLARES_IMG, CRAYONES_CRAYOLA_IMG } from '../utils/productImages.ts';
 
 export const INITIAL_PRODUCTS: Product[] = [
   // --- ARTÍCULOS ESCOLARES DE LAS IMÁGENES SUBIDAS (PRECIOS EXACTOS) ---

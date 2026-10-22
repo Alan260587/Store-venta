@@ -1,5 +1,5 @@
-import React from 'react';
-import { ShoppingBag, FileText, Shield, MessageCircle, Leaf, Users } from 'lucide-react';
+import React, { useState } from 'react';
+import { ShoppingBag, FileText, Shield, MessageCircle, Leaf, Users, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { MultiUserPresence } from '../types';
 
 interface NavbarProps {
@@ -10,6 +10,9 @@ interface NavbarProps {
   isAdminUnlocked: boolean;
   openAdminModal: () => void;
   presence?: MultiUserPresence;
+  totalProductsCount?: number;
+  totalPdfsCount?: number;
+  onSyncAllDevices?: () => Promise<void> | void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -20,8 +23,22 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAdminUnlocked,
   openAdminModal,
   presence,
+  totalProductsCount = 0,
+  totalPdfsCount = 0,
+  onSyncAllDevices,
 }) => {
   const totalOnline = presence?.totalOnline || 1;
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleManualSync = async () => {
+    if (!onSyncAllDevices || isSyncing) return;
+    setIsSyncing(true);
+    try {
+      await onSyncAllDevices();
+    } finally {
+      setTimeout(() => setIsSyncing(false), 600);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-emerald-100 shadow-sm">
@@ -29,16 +46,35 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="bg-emerald-800 text-white text-xs sm:text-sm py-1.5 px-4 text-center font-medium flex flex-wrap items-center justify-center gap-2 sm:gap-3">
         <div className="flex items-center gap-1.5">
           <Leaf className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
-          <span>Sheló NABEL — ¡La belleza a tu alcance en armonía con la naturaleza!</span>
+          <span>Sheló NABEL — ¡Todo unificado en la misma página (Laptop • Celular • iOS)!</span>
         </div>
-        <span className="hidden md:inline text-emerald-200">| WhatsApp: +52 662 139 5110</span>
+
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-900/90 border border-emerald-600 text-[11px] text-emerald-100 font-semibold">
+          <CheckCircle2 className="w-3 h-3 text-emerald-300" />
+          <span>
+            {totalProductsCount} Productos • {totalPdfsCount} PDFs
+          </span>
+        </span>
+
         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-900/90 border border-emerald-600 text-[11px] text-emerald-100 font-semibold">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
           <Users className="w-3 h-3 text-emerald-300" />
           <span>
-            {totalOnline} {totalOnline === 1 ? 'usuario conectado' : 'usuarios conectados'}
+            {totalOnline} {totalOnline === 1 ? 'aparato conectado' : 'aparatos conectados'}
           </span>
         </span>
+
+        {onSyncAllDevices && (
+          <button
+            type="button"
+            onClick={handleManualSync}
+            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-bold transition-colors shadow-xs cursor-pointer"
+            title="Unificar y ver todos los productos y PDFs de Laptop, Celular e iOS en esta misma página"
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Todo'}</span>
+          </button>
+        )}
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -75,7 +111,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : 'text-emerald-800 hover:bg-emerald-100/60'
               }`}
             >
-              Catálogo de Productos
+              <span>Catálogo ({totalProductsCount})</span>
             </button>
 
             <button
@@ -87,7 +123,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <FileText className="w-4 h-4" />
-              Descargas y Documentos
+              <span>Descargas y PDFs ({totalPdfsCount})</span>
             </button>
 
             <button
@@ -154,7 +190,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               activeTab === 'catalog' ? 'bg-emerald-600 text-white' : 'text-emerald-900'
             }`}
           >
-            Productos
+            Productos ({totalProductsCount})
           </button>
           <button
             onClick={() => setActiveTab('pdfs')}
@@ -163,7 +199,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            PDFs
+            PDFs ({totalPdfsCount})
           </button>
           <button
             onClick={() => {

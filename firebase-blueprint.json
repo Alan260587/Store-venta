@@ -1,0 +1,287 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Catalog product in Shelo NABEL store synchronized across Laptop, Android, and iOS",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique product identifier"
+        },
+        "clave": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Product SKU code"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Product display name"
+        },
+        "price": {
+          "type": "number",
+          "description": "Price in MXN"
+        },
+        "size": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Product presentation size"
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Product category"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1500,
+          "description": "Product description"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 900000,
+          "description": "Product image URL or compressed data URI"
+        },
+        "isStarProduct": {
+          "type": "boolean",
+          "description": "Featured star product flag"
+        },
+        "isNew": {
+          "type": "boolean",
+          "description": "New release flag"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "maxLength": 20,
+          "description": "Visibility scope for catalog queries"
+        },
+        "authorUid": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "UID of the user who synced or created the product"
+        },
+        "updatedAtMs": {
+          "type": "number",
+          "description": "Client modification timestamp in milliseconds"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "clave",
+        "name",
+        "price",
+        "size",
+        "category",
+        "description",
+        "image",
+        "visibility",
+        "authorUid",
+        "updatedAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PdfDocument": {
+      "title": "PdfDocument",
+      "description": "Downloadable PDF catalog or book in Shelo NABEL store synchronized across Laptop, Android, and iOS",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique PDF document identifier"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 250,
+          "description": "PDF title"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1500,
+          "description": "PDF description"
+        },
+        "pagesCount": {
+          "type": "number",
+          "description": "Number of pages in the PDF"
+        },
+        "price": {
+          "type": "number",
+          "description": "Price in MXN (0 for free or 20 for paid)"
+        },
+        "downloadKey": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Admin-controlled download key for $20 MXN PDFs"
+        },
+        "uploadedAt": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Upload date string"
+        },
+        "fileSize": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Formatted file size"
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "PDF category"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "maxLength": 20,
+          "description": "Visibility scope for store queries"
+        },
+        "authorUid": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "UID of the user who synced or uploaded the PDF"
+        },
+        "updatedAtMs": {
+          "type": "number",
+          "description": "Client modification timestamp in milliseconds"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "description",
+        "pagesCount",
+        "price",
+        "downloadKey",
+        "uploadedAt",
+        "fileSize",
+        "category",
+        "visibility",
+        "authorUid",
+        "updatedAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DeletedRecord": {
+      "title": "DeletedRecord",
+      "description": "Tombstone record for deleted products or PDFs across devices",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Deleted item ID"
+        },
+        "itemType": {
+          "type": "string",
+          "enum": ["product", "pdf"],
+          "maxLength": 20,
+          "description": "Type of deleted item"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "maxLength": 20,
+          "description": "Visibility scope"
+        },
+        "authorUid": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "UID of the admin who deleted the item"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server deletion timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "itemType",
+        "visibility",
+        "authorUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted administrator role registry",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Admin user UID"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin"],
+          "maxLength": 20,
+          "description": "Role identifier"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp"
+        }
+      },
+      "required": ["uid", "role", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Synchronized store products across Laptop, Android, and iOS"
+    },
+    "/pdfs/{pdfId}": {
+      "schema": "PdfDocument",
+      "description": "Synchronized PDF catalogs and books across Laptop, Android, and iOS"
+    },
+    "/deletedItems/{itemId}": {
+      "schema": "DeletedRecord",
+      "description": "Synchronized deletion tombstones so deleted items stay deleted on all devices"
+    },
+    "/admins/{adminUid}": {
+      "schema": "AdminRecord",
+      "description": "Trusted administrator UIDs"
+    }
+  }
+}

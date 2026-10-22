@@ -30,7 +30,8 @@ import {
 import { Product, PdfDocument, MultiUserPresence } from '../types';
 import { countPdfPages } from '../utils/pdfParser';
 import { pdfFileStore } from '../services/pdfFileStore';
-import { generateRandomDownloadKey } from '../services/dbStorage';
+import { dbStorage, generateRandomDownloadKey } from '../services/dbStorage';
+import { auth, signInWithGoogleCloud } from '../firebase';
 import { generateAdminManualPdf } from '../utils/generateManualPdf';
 import { generateDownloadablePdf } from '../utils/generateCatalogPdf';
 
@@ -81,6 +82,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [editingPrice, setEditingPrice] = useState<string>('');
   const [isDownloadingManual, setIsDownloadingManual] = useState<boolean>(false);
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
+  const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
 
   // Inline editing for existing PDFs in the table (Title & Download Key)
   const [editingPdfId, setEditingPdfId] = useState<string | null>(null);
@@ -352,6 +354,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setEditingProductId(null);
   };
 
+  const handleSyncAllDevicesNow = async () => {
+    setIsSyncingCloud(true);
+    try {
+      await dbStorage.syncWithServer();
+      if (!auth.currentUser) {
+        const user = await signInWithGoogleCloud();
+        if (user) {
+          await dbStorage.syncAllToFirestoreCloud();
+        }
+      } else {
+        await dbStorage.syncAllToFirestoreCloud();
+      }
+      setInlineUploadMsg(
+        '¡Sincronización completa! Todos los productos y PDFs de tu Laptop, Celular Android e iOS están unificados en esta misma página y en Firebase.'
+      );
+      setTimeout(() => setInlineUploadMsg(''), 5000);
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
       
@@ -372,12 +395,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Sube de 1 a 10 PDFs a la vez, <strong>modifica sus títulos al guardar</strong>, consulta las <strong>Claves de Descarga</strong> y descarga el <strong>Instructivo en PDF</strong>. Los demás usuarios permanecen en modo normal y tu sesión se cierra automáticamente al cerrar la página.
+              Sube de 1 a 10 PDFs a la vez, <strong>modifica sus títulos al guardar</strong>, consulta las <strong>Claves de Descarga</strong> y descarga el <strong>Instructivo en PDF</strong>. Todo se sincroniza en la misma página (Laptop, Celular e iOS) y tu sesión se cierra automáticamente al cerrar la página.
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+          <button
+            type="button"
+            onClick={() => void handleSyncAllDevicesNow()}
+            disabled={isSyncingCloud}
+            className="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+            title="Sincronizar todos los productos y PDFs de Laptop, Celular e iOS en la misma página y en Firebase"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncingCloud ? 'animate-spin' : ''}`} />
+            <span>{isSyncingCloud ? 'Sincronizando...' : 'Sincronizar Nube (Laptop/Celular/iOS)'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('manual')}
