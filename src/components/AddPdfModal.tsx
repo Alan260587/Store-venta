@@ -314,13 +314,15 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
 
         {/* Header */}
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md shrink-0">
-            <Upload className="w-6 h-6" />
-          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}assets/aistudio/shelon_logo_182b5079.jpeg`}
+            alt="Sheló NABEL"
+            className="w-12 h-12 rounded-full object-cover border-2 border-amber-400 shadow-md shrink-0 bg-white"
+          />
           <div>
             <h3 className="font-serif font-bold text-xl text-slate-900">Subir y Configurar Archivos PDF</h3>
             <p className="text-xs text-slate-500">
-              Sube tus PDFs de <strong>1 en 1</strong> o <strong>hasta 10 a la vez</strong>, modifica su título, elige <strong>Gratis ($0) o $20 pesos</strong> y guárdalos en la página.
+              Sube tus PDFs de <strong>1 en 1</strong> o <strong>hasta 10 a la vez</strong>, modifica su título, elige <strong>Gratis ($0) o $20 pesos</strong> y se actualizarán al momento y al guardar.
             </p>
           </div>
         </div>

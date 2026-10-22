@@ -144,7 +144,10 @@ function mergePdfsList(
   incomingList: any[],
   deletedIds: string[]
 ): { merged: any[]; changed: boolean } {
-  const deletedSet = new Set(deletedIds);
+  // Never allow default PDFs (INITIAL_PDFS) to be deleted
+  const deletedSet = new Set(
+    deletedIds.filter((id) => !initialPdfsById.has(id))
+  );
   const map = new Map<string, any>();
   let changed = false;
 
@@ -182,9 +185,9 @@ function mergePdfsList(
     }
   }
 
-  // Ensure all non-deleted INITIAL_PDFS exist
+  // Ensure ALL INITIAL_PDFS always exist (never remove any default PDF)
   for (const initPdf of INITIAL_PDFS) {
-    if (!deletedSet.has(initPdf.id) && !map.has(initPdf.id)) {
+    if (!map.has(initPdf.id)) {
       map.set(initPdf.id, initPdf);
       changed = true;
     }

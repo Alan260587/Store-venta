@@ -62,14 +62,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         <div className="w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between border-l border-emerald-100">
           
           {/* Cart Header */}
-          <div className="p-6 bg-emerald-800 text-white flex items-center justify-between">
+          <div className="p-6 bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white flex items-center justify-between border-b-2 border-amber-400">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-emerald-700 text-amber-300">
-                <ShoppingBag className="w-6 h-6" />
-              </div>
+              <img
+                src="/assets/aistudio/shelon_logo_182b5079.jpeg"
+                alt="Sheló NABEL"
+                className="w-12 h-12 rounded-full object-cover border-2 border-amber-400 bg-white shrink-0"
+              />
               <div>
-                <h2 className="font-serif font-bold text-lg">Carrito de Compras</h2>
-                <p className="text-xs text-emerald-200">
+                <h2 className="font-serif font-bold text-lg">Carrito Sheló NABEL</h2>
+                <p className="text-xs text-amber-200">
                   {totalItemsCount} {totalItemsCount === 1 ? 'artículo seleccionado' : 'artículos seleccionados'}
                 </p>
               </div>

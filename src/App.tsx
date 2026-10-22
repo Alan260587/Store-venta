@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Product, PdfDocument, CartItem, MultiUserPresence } from './types';
+import { Product, PdfDocument, CartItem, MultiUserPresence, ProductCategory } from './types';
 import { dbStorage } from './services/dbStorage';
 import { pdfFileStore } from './services/pdfFileStore';
 import { Navbar } from './components/Navbar';
@@ -12,10 +12,14 @@ import { AdminPanel } from './components/AdminPanel';
 import { AddProductModal } from './components/AddProductModal';
 import { AddPdfModal } from './components/AddPdfModal';
 import { Footer } from './components/Footer';
-import { ShieldCheck, Lock, Users, CheckCircle2, RefreshCw } from 'lucide-react';
+import { SHELO_LOGO_URL } from './components/Navbar';
+import { ShieldCheck, Lock, Users, CheckCircle2, MessageCircle } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'catalog' | 'pdfs' | 'admin'>('catalog');
+  const [selectedCategory, setSelectedCategory] = useState<ProductCategory>('Todos');
+  const [onlyStarProducts, setOnlyStarProducts] = useState<boolean>(false);
+  const [globalSearchTerm, setGlobalSearchTerm] = useState<string>('');
   
   // Database State (preserved across reloads & synced across multiple users)
   const [products, setProducts] = useState<Product[]>(() => dbStorage.getProducts());
@@ -324,17 +328,19 @@ export default function App() {
     return result;
   };
 
-  const handleUpdatePdf = (pdf: PdfDocument) => {
-    dbStorage.updatePdf(pdf);
+  const handleUpdatePdf = (pdf: PdfDocument, options?: { silent?: boolean }) => {
+    dbStorage.updatePdf(pdf, options);
     refreshPageData(
-      `¡Guardado automático! Cambios en el PDF "${pdf.title}" subidos a la Página, a Firebase y a la Nube.`
+      options?.silent
+        ? undefined
+        : `¡Actualizado al momento! Cambios en el PDF "${pdf.title}" guardados en la Página, Firebase y Nube.`
     );
   };
 
   const handleDeletePdf = (id: string) => {
     dbStorage.deletePdf(id);
     void pdfFileStore.deleteFile(id);
-    refreshPageData('¡PDF eliminado automáticamente de la Página, Firebase y la Nube!');
+    refreshPageData();
   };
 
   const handleResetDefaults = () => {
@@ -349,7 +355,7 @@ export default function App() {
       
       {/* Live Automatic Page Update Toast Banner whenever a Product or PDF is saved */}
       {pageRefreshMessage && (
-        <div className="fixed bottom-5 right-5 z-50 max-w-md bg-emerald-900 text-white px-4 py-3 rounded-2xl shadow-2xl border-2 border-amber-400 flex items-center gap-3 animate-fade-in">
+        <div className="fixed bottom-24 right-5 z-50 max-w-md bg-emerald-900 text-white px-4 py-3 rounded-2xl shadow-2xl border-2 border-amber-400 flex items-center gap-3 animate-fade-in">
           <div className="w-8 h-8 rounded-xl bg-emerald-700 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-5 h-5 text-amber-300" />
           </div>
@@ -365,6 +371,36 @@ export default function App() {
           </button>
         </div>
       )}
+
+      {/* Floating WhatsApp Direct Button (6621395110) */}
+      <a
+        href="https://wa.me/526621395110?text=Hola%20Jhosie%20Gir%C3%B3n%2C%20me%20comunico%20desde%20el%20bot%C3%B3n%20flotante%20de%20WhatsApp%20de%20la%20p%C3%A1gina%20Shel%C3%B3%20NABEL."
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-5 right-5 z-40 group flex items-center gap-2.5 bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white p-2.5 sm:px-4 sm:py-3 rounded-full shadow-2xl border-2 border-amber-300 transition-all hover:scale-105 active:scale-95"
+        title="Enviar WhatsApp Directo a Jhosie Girón: 6621395110"
+        aria-label="WhatsApp Directo Jhosie Girón 6621395110"
+      >
+        <div className="relative flex items-center justify-center">
+          <span className="absolute -inset-1 rounded-full bg-emerald-400/50 animate-ping pointer-events-none" />
+          <img
+            src={SHELO_LOGO_URL}
+            alt="Sheló NABEL"
+            className="w-9 h-9 rounded-full object-cover border-2 border-amber-300 bg-white relative z-10"
+          />
+          <span className="w-5 h-5 rounded-full bg-emerald-600 border border-white flex items-center justify-center absolute -bottom-1 -right-1 z-20 shadow-xs">
+            <MessageCircle className="w-3 h-3 text-amber-300 fill-amber-300/30" />
+          </span>
+        </div>
+        <div className="hidden sm:block text-left pr-1">
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-200 block leading-none">
+            WhatsApp Jhosie Girón
+          </span>
+          <span className="font-mono font-black text-xs sm:text-sm text-white tracking-tight">
+            6621395110
+          </span>
+        </div>
+      </a>
 
       {/* Top Admin Active Banner if unlocked ONLY on this session */}
       {isAdminUnlocked && (
@@ -422,6 +458,17 @@ export default function App() {
         presence={presence}
         totalProductsCount={products.length}
         totalPdfsCount={pdfs.length}
+        products={products}
+        pdfs={pdfs}
+        selectedCategory={selectedCategory}
+        onSelectCategory={setSelectedCategory}
+        onlyStarProducts={onlyStarProducts}
+        onToggleStarProducts={setOnlyStarProducts}
+        onQuickSearchCatalog={setGlobalSearchTerm}
+        onAddToCartFromMenu={(prod) => {
+          handleAddToCart(prod, 1);
+          setPageRefreshMessage(`¡"${prod.name}" agregado al carrito desde el buscador del menú!`);
+        }}
       />
 
       {/* Main View Content */}
@@ -436,6 +483,11 @@ export default function App() {
                 if (el) el.scrollIntoView({ behavior: 'smooth' });
               }}
               onExplorePdfs={() => setActiveTab('pdfs')}
+              products={products}
+              pdfsCount={pdfs.length}
+              selectedCategory={selectedCategory}
+              onSelectCategory={setSelectedCategory}
+              onToggleStarProducts={setOnlyStarProducts}
             />
 
             <div id="catalog-section">
@@ -445,6 +497,12 @@ export default function App() {
                 isAdmin={isAdminUnlocked}
                 onUpdateProduct={handleUpdateProduct}
                 onDeleteProduct={handleDeleteProduct}
+                selectedCategory={selectedCategory}
+                onSelectCategory={setSelectedCategory}
+                onlyStarProducts={onlyStarProducts}
+                onToggleStarProducts={setOnlyStarProducts}
+                externalSearchTerm={globalSearchTerm}
+                onSearchTermChange={setGlobalSearchTerm}
               />
             </div>
           </>
@@ -524,13 +582,16 @@ export default function App() {
       />
 
       {/* Footer */}
-      <Footer onNavigate={(tab) => {
-        if (tab === 'admin' && !isAdminUnlocked) {
-          setIsAdminModalOpen(true);
-        } else {
-          setActiveTab(tab);
-        }
-      }} />
+      <Footer
+        onNavigate={(tab) => {
+          if (tab === 'admin' && !isAdminUnlocked) {
+            setIsAdminModalOpen(true);
+          } else {
+            setActiveTab(tab);
+          }
+        }}
+        onSelectCategory={setSelectedCategory}
+      />
 
     </div>
   );

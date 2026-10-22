@@ -250,7 +250,10 @@ function mergePdfLists(
   listB: PdfDocument[],
   deletedIds: string[]
 ): PdfDocument[] {
-  const deletedSet = new Set(deletedIds);
+  // Never allow default PDFs (INITIAL_PDFS) to be removed
+  const deletedSet = new Set(
+    deletedIds.filter((id) => !initialPdfsMap.has(id))
+  );
   const map = new Map<string, PdfDocument>();
 
   const normalizePdf = (raw: PdfDocument): PdfDocument => {
@@ -289,7 +292,7 @@ function mergePdfLists(
   for (const p of listA) processPdf(p);
   for (const p of listB) processPdf(p);
   for (const initPdf of INITIAL_PDFS) {
-    if (!deletedSet.has(initPdf.id) && !map.has(initPdf.id)) {
+    if (!map.has(initPdf.id)) {
       map.set(initPdf.id, normalizePdf(initPdf));
     }
   }
@@ -926,7 +929,7 @@ export const dbStorage = {
     };
   },
 
-  updatePdf: (updatedPdf: PdfDocument): PdfDocument[] => {
+  updatePdf: (updatedPdf: PdfDocument, options?: { silent?: boolean }): PdfDocument[] => {
     const pdfs = dbStorage.getPdfs();
     const cleanPrice = Number(updatedPdf.price) === 0 ? 0 : 20;
     const cleanKey =
@@ -941,11 +944,17 @@ export const dbStorage = {
       updatedAt: Date.now()
     };
 
-    const updated = pdfs.map((pdf) => (pdf.id === normalized.id ? normalized : pdf));
+    const exists = pdfs.some((pdf) => pdf.id === normalized.id);
+    const updated = exists
+      ? pdfs.map((pdf) => (pdf.id === normalized.id ? normalized : pdf))
+      : [normalized, ...pdfs];
+
     dbStorage.savePdfs(updated);
     notifyPageUpdate(
       'pdf',
-      `¡PDF "${normalized.title}" actualizado automáticamente en la página, Firebase y la nube!`
+      options?.silent
+        ? undefined
+        : `¡PDF "${normalized.title}" actualizado al momento en la página, Firebase y la nube!`
     );
     void pushUpdateToServer({ pdfs: updated });
     void upsertPdfToFirestore(normalized);
@@ -953,6 +962,11 @@ export const dbStorage = {
   },
 
   deletePdf: (id: string): PdfDocument[] => {
+    // Protect all default PDFs so no default PDF is ever removed
+    if (initialPdfsMap.has(id)) {
+      notifyPageUpdate('pdf', 'Los PDFs por defecto del catálogo están protegidos y no se eliminan.');
+      return dbStorage.getPdfs();
+    }
     const deletedIds = getDeletedIds(DELETED_PDFS_KEY);
     if (!deletedIds.includes(id)) {
       deletedIds.push(id);

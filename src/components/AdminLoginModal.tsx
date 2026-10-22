@@ -50,9 +50,11 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         </button>
 
         <div className="text-center mb-5">
-          <div className="w-14 h-14 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner border border-amber-200">
-            <Shield className="w-7 h-7" />
-          </div>
+          <img
+            src="/assets/aistudio/shelon_logo_182b5079.jpeg"
+            alt="Sheló NABEL Jhosie Girón"
+            className="w-20 h-20 rounded-full object-cover mx-auto mb-3 shadow-lg border-2 border-amber-400 bg-white"
+          />
           <h3 className="font-serif font-bold text-xl text-slate-900">
             Conexión Exclusiva con Clave Admin
           </h3>

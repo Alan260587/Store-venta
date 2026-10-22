@@ -30,10 +30,14 @@ import {
 import { Product, PdfDocument, MultiUserPresence } from '../types';
 import { countPdfPages } from '../utils/pdfParser';
 import { pdfFileStore } from '../services/pdfFileStore';
-import { dbStorage, generateRandomDownloadKey } from '../services/dbStorage';
-import { auth, signInWithGoogleCloud } from '../firebase';
+import { generateRandomDownloadKey } from '../services/dbStorage';
 import { generateAdminManualPdf } from '../utils/generateManualPdf';
 import { generateDownloadablePdf } from '../utils/generateCatalogPdf';
+import { INITIAL_PDFS } from '../data/initialPdfs';
+import { SHELO_LOGO_URL } from './Navbar';
+import { PdfPreviewModal } from './PdfPreviewModal';
+
+const DEFAULT_PDF_IDS = new Set(INITIAL_PDFS.map((p) => p.id));
 
 interface AdminPanelProps {
   products: Product[];
@@ -45,7 +49,7 @@ interface AdminPanelProps {
   onAddPdfsBatch?: (pdfList: Array<Omit<PdfDocument, 'id' | 'uploadedAt'>>) => { success: boolean; message: string; addedPdfs: PdfDocument[] };
   onDeleteProduct: (id: string) => void;
   onDeletePdf: (id: string) => void;
-  onUpdatePdf: (pdf: PdfDocument) => void;
+  onUpdatePdf: (pdf: PdfDocument, options?: { silent?: boolean }) => void;
   onUpdateProduct: (product: Product) => void;
   onLockAdmin: () => void;
   onResetDefaults: () => void;
@@ -83,6 +87,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isDownloadingManual, setIsDownloadingManual] = useState<boolean>(false);
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
   const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
+  const [previewPdf, setPreviewPdf] = useState<PdfDocument | null>(null);
+  const [previewMode, setPreviewMode] = useState<'preview8' | 'fullscreen'>('preview8');
 
   // Inline editing for existing PDFs in the table (Title & Download Key)
   const [editingPdfId, setEditingPdfId] = useState<string | null>(null);
@@ -374,15 +380,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
       
-      {/* Admin Header */}
-      <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 mb-8 shadow-xl border border-slate-800 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+      {/* Admin Header with Sheló NABEL Logo */}
+      <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 mb-8 shadow-xl border-2 border-amber-400/50 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shadow-md shrink-0">
-            <ShieldCheck className="w-7 h-7" />
-          </div>
+          <img
+            src={SHELO_LOGO_URL}
+            alt="Sheló NABEL Jhosie Girón"
+            className="w-16 h-16 rounded-full object-cover border-2 border-amber-400 shadow-lg shrink-0 bg-white"
+          />
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="font-serif font-bold text-2xl text-white">Panel de Administración Total</h2>
+              <h2 className="font-serif font-bold text-2xl text-white">Panel de Administración Total Sheló NABEL</h2>
               <span className="bg-amber-400/20 text-amber-300 text-[10px] font-mono uppercase font-bold px-2 py-0.5 rounded border border-amber-500/30">
                 Clave **** Activa
               </span>
@@ -391,11 +399,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </span>
               <span className="bg-cyan-500/20 text-cyan-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-cyan-500/30 flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3" />
-                <span>Subida Automática a Firebase y Nube al Guardar</span>
+                <span>Actualización al Momento y al Guardar</span>
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Sube de 1 a 10 PDFs a la vez desde tu <strong>Laptop, Móvil Android, iOS o Tablet</strong>. Al darle <strong>"Guardar"</strong>, todo se sube automáticamente a la página, a Firebase y a la nube sin necesidad de sincronizar.
+              Sube o edita PDFs desde tu <strong>Laptop, Móvil Android, iOS o Tablet</strong>. Todos los cambios se actualizan <strong>al momento y al darle Guardar</strong> en la página, Firebase y la nube (conservando todos los PDFs por defecto).
             </p>
           </div>
         </div>
@@ -855,6 +863,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     {filteredPdfs.map((pdf) => {
                       const isFree = Number(pdf.price) === 0;
                       const isEditing = editingPdfId === pdf.id;
+                      const isDefaultPdf = DEFAULT_PDF_IDS.has(pdf.id);
 
                       return (
                         <tr key={pdf.id} className="hover:bg-slate-50 transition-colors">
@@ -864,7 +873,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 <input
                                   type="text"
                                   value={editingPdfTitle}
-                                  onChange={(e) => setEditingPdfTitle(e.target.value)}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setEditingPdfTitle(val);
+                                    if (val.trim()) {
+                                      onUpdatePdf(
+                                        {
+                                          ...pdf,
+                                          title: val.trim(),
+                                          downloadKey: editingPdfKey.trim().toUpperCase() || pdf.downloadKey || 'SN-2026'
+                                        },
+                                        { silent: true }
+                                      );
+                                    }
+                                  }}
                                   className="w-full max-w-xs px-2.5 py-1.5 border-2 border-emerald-500 rounded-lg text-xs font-bold"
                                   autoFocus
                                 />
@@ -882,7 +904,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                       onClick={() => setEditingPdfId(null)}
                                       className="px-2 py-1.5 bg-slate-200 text-slate-700 font-semibold rounded-lg text-[11px]"
                                     >
-                                      Cancelar
+                                      Cerrar
                                     </button>
                                   </>
                                 )}
@@ -899,7 +921,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   type="button"
                                   onClick={() => handleStartEditPdf(pdf)}
                                   className="p-1 text-slate-400 hover:text-emerald-700 rounded hover:bg-emerald-50"
-                                  title="Modificar título del PDF"
+                                  title="Modificar título del PDF al momento"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
@@ -918,7 +940,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                 <input
                                   type="text"
                                   value={editingPdfKey}
-                                  onChange={(e) => setEditingPdfKey(e.target.value.toUpperCase())}
+                                  onChange={(e) => {
+                                    const val = e.target.value.toUpperCase();
+                                    setEditingPdfKey(val);
+                                    if (val.trim()) {
+                                      onUpdatePdf(
+                                        {
+                                          ...pdf,
+                                          title: editingPdfTitle.trim() || pdf.title,
+                                          downloadKey: val.trim()
+                                        },
+                                        { silent: true }
+                                      );
+                                    }
+                                  }}
                                   className="w-28 px-2.5 py-1.5 border-2 border-amber-400 rounded-lg font-mono text-xs font-bold uppercase"
                                 />
                                 <button
@@ -933,7 +968,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                   onClick={() => setEditingPdfId(null)}
                                   className="px-2 py-1.5 bg-slate-200 text-slate-700 font-semibold rounded-lg text-[11px]"
                                 >
-                                  Cancelar
+                                  Cerrar
                                 </button>
                               </div>
                             ) : (
@@ -1000,7 +1035,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           </td>
 
                           <td className="py-3.5 px-4 text-right">
-                            <div className="inline-flex items-center gap-1.5">
+                            <div className="inline-flex items-center gap-1.5 flex-wrap justify-end">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewMode('preview8');
+                                  setPreviewPdf(pdf);
+                                }}
+                                className="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-blue-950 font-bold text-[11px] rounded-lg border border-amber-300 flex items-center gap-1 transition-all"
+                                title="Ver Vista Previa de 8 Páginas"
+                              >
+                                <Layers className="w-3.5 h-3.5 text-amber-700" />
+                                <span>8 Págs</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPreviewMode('fullscreen');
+                                  setPreviewPdf(pdf);
+                                }}
+                                className="px-2.5 py-1.5 bg-blue-950 hover:bg-blue-900 text-amber-300 font-bold text-[11px] rounded-lg flex items-center gap-1 transition-all"
+                                title="Abrir PDF en Pantalla (Modo Admin)"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Abrir PDF</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => void handleDirectAdminDownloadPdf(pdf)}
@@ -1023,14 +1082,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               >
                                 <Edit3 className="w-4 h-4" />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => onDeletePdf(pdf.id)}
-                                className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"
-                                title="Borrar PDF"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {!isDefaultPdf && (
+                                <button
+                                  type="button"
+                                  onClick={() => onDeletePdf(pdf.id)}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"
+                                  title="Borrar PDF subido"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1394,6 +1455,18 @@ Total: $423 MXN`}
 
       </div>
 
+      {previewPdf && (
+        <PdfPreviewModal
+          isOpen={Boolean(previewPdf)}
+          onClose={() => setPreviewPdf(null)}
+          pdf={previewPdf}
+          products={products}
+          isAdmin={true}
+          initialMode={previewMode}
+          onDownload={() => void handleDirectAdminDownloadPdf(previewPdf)}
+          isDownloading={downloadingPdfId === previewPdf.id}
+        />
+      )}
     </div>
   );
 };

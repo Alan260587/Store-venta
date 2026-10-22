@@ -1,14 +1,26 @@
 import React, { useState } from 'react';
-import { Search, FileText, CheckCircle2, Gift, Upload, Sparkles, KeyRound, BookOpen, Download } from 'lucide-react';
+import {
+  Search,
+  FileText,
+  CheckCircle2,
+  Gift,
+  Upload,
+  Sparkles,
+  KeyRound,
+  BookOpen,
+  Download,
+  RefreshCw
+} from 'lucide-react';
 import { PdfDocument, Product } from '../types';
 import { PdfCard } from './PdfCard';
 import { generateAdminManualPdf } from '../utils/generateManualPdf';
+import { SHELO_LOGO_URL } from './Navbar';
 
 interface PdfStoreProps {
   pdfs: PdfDocument[];
   products?: Product[];
   isAdmin?: boolean;
-  onUpdatePdf?: (pdf: PdfDocument) => void;
+  onUpdatePdf?: (pdf: PdfDocument, options?: { silent?: boolean }) => void;
   onDeletePdf?: (id: string) => void;
   onOpenAddPdf?: () => void;
 }
@@ -23,7 +35,13 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterType, setFilterType] = useState<'all' | 'free' | 'paid'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [isDownloadingGuide, setIsDownloadingGuide] = useState<boolean>(false);
+
+  const categories = [
+    'Todas',
+    ...Array.from(new Set(pdfs.map((p) => p.category || 'Catálogo Oficial')))
+  ];
 
   const handleDownloadGuide = async () => {
     setIsDownloadingGuide(true);
@@ -56,43 +74,56 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
       (filterType === 'free' && isFree) ||
       (filterType === 'paid' && !isFree);
 
-    return matchesSearch && matchesPrice;
+    const matchesCategory =
+      selectedCategory === 'Todas' || (pdf.category || 'Catálogo Oficial') === selectedCategory;
+
+    return matchesSearch && matchesPrice && matchesCategory;
   });
 
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
-      
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-800 text-white rounded-3xl p-6 sm:p-8 mb-8 shadow-xl border border-emerald-700/50 relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-64 h-64 bg-teal-400/10 rounded-full blur-3xl pointer-events-none" />
+      {/* Header Banner with Sheló NABEL Logo */}
+      <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white rounded-3xl p-6 sm:p-8 mb-8 shadow-xl border-2 border-amber-400/60 relative overflow-hidden">
+        <div className="absolute right-0 top-0 w-64 h-64 bg-amber-400/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-700/80 border border-emerald-500/30 text-emerald-200 text-xs font-semibold mb-4">
-              <Gift className="w-3.5 h-3.5 text-amber-300" />
-              <span>Catálogo Sheló NABEL Gratuito &amp; Tienda de Descargas PDF</span>
-            </div>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 max-w-3xl">
+            <img
+              src={SHELO_LOGO_URL}
+              alt="Sheló NABEL Jhosie Girón"
+              className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-4 border-amber-400 shadow-2xl shrink-0 bg-white"
+            />
 
-            <h2 className="text-2xl sm:text-4xl font-serif font-bold text-white mb-3">
-              Catálogos y Documentos en PDF
-            </h2>
-
-            <p className="text-xs sm:text-sm text-emerald-100 font-light leading-relaxed mb-6">
-              Los documentos <strong>Gratis ($0 MXN)</strong> tienen <strong>descarga directa inmediata sin necesidad de clave</strong>. Los documentos especializados de <strong>$20 pesos MXN</strong> cuentan con <strong>Clave de Descarga controlada por el Administrador</strong> (quien te la entrega al adquirirlo por WhatsApp). Si estás conectado como <strong>Administrador</strong>, puedes descargar tanto los de $20 pesos como los gratuitos directamente sin clave.
-            </p>
-
-            <div className="flex flex-wrap items-center gap-3 text-xs text-emerald-200">
-              <div className="flex items-center gap-1.5 bg-emerald-950/40 px-3 py-1.5 rounded-full border border-emerald-500/30">
-                <CheckCircle2 className="w-4 h-4 text-emerald-300" />
-                <span className="font-bold text-white">Gratis ($0): Descarga Directa Sin Clave</span>
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/50 text-amber-200 text-xs font-bold mb-3">
+                <Gift className="w-3.5 h-3.5 text-amber-300" />
+                <span>Sheló NABEL • Jhosie Girón • Todos los PDFs por Defecto + Nuevos</span>
               </div>
-              <div className="flex items-center gap-1.5 bg-emerald-950/40 px-3 py-1.5 rounded-full border border-emerald-500/30">
-                <KeyRound className="w-4 h-4 text-amber-400" />
-                <span>$20 MXN: Con Clave controlada por Admin</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-emerald-950/40 px-3 py-1.5 rounded-full border border-emerald-500/30">
-                <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                <span>Admin Conectado: Descarga Todo Sin Clave</span>
+
+              <h2 className="text-2xl sm:text-4xl font-serif font-extrabold text-white mb-2">
+                Catálogos y Documentos en PDF ({pdfs.length})
+              </h2>
+
+              <p className="text-xs sm:text-sm text-amber-100/90 font-light leading-relaxed mb-4">
+                Todos los PDFs por defecto están conservados e incluidos. Los documentos{' '}
+                <strong>Gratis ($0 MXN)</strong> tienen descarga libre inmediata, y los de{' '}
+                <strong>$20 MXN</strong> se descargan con Clave de Administrador. Cualquier cambio o
+                guardado se actualiza <strong>al momento</strong> en toda la página, Firebase y la nube.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-2.5 text-xs text-emerald-200">
+                <div className="flex items-center gap-1.5 bg-blue-950/60 px-3 py-1.5 rounded-full border border-amber-400/40">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span className="font-bold text-white">Gratis ($0): Descarga Directa Sin Clave</span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-blue-950/60 px-3 py-1.5 rounded-full border border-amber-400/40">
+                  <KeyRound className="w-4 h-4 text-amber-400" />
+                  <span>$20 MXN: Con Clave controlada por Admin</span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-blue-950/60 px-3 py-1.5 rounded-full border border-amber-400/40">
+                  <RefreshCw className="w-3.5 h-3.5 text-cyan-300" />
+                  <span>Actualización Instantánea al Momento y al Guardar</span>
+                </div>
               </div>
             </div>
           </div>
@@ -102,13 +133,13 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
               <button
                 type="button"
                 onClick={onOpenAddPdf}
-                className="px-6 py-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs sm:text-sm shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
+                className="px-6 py-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
               >
                 <Upload className="w-5 h-5 text-slate-950" />
                 <span>+ Subir Archivos PDF</span>
               </button>
-              <span className="text-[11px] text-emerald-100 text-center font-medium">
-                {isAdmin ? 'Modo Admin Activo • Sube y edita títulos' : 'Requiere Clave Admin (****)'}
+              <span className="text-[11px] text-amber-200 text-center font-semibold">
+                {isAdmin ? 'Modo Admin Activo • Actualiza al momento' : 'Requiere Clave Admin (****)'}
               </span>
             </div>
           )}
@@ -121,7 +152,7 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
           <div className="flex items-center gap-2.5">
             <KeyRound className="w-5 h-5 text-amber-600 shrink-0" />
             <div>
-              <span className="font-bold">Vista de Administrador Activa:</span> En cada tarjeta de abajo puedes ver la <strong>Clave de Descarga exclusiva</strong> para entregársela al cliente, además de poder <strong>modificar el título del PDF</strong> y cambiar entre <strong>Gratis ($0) o $20 pesos</strong>.
+              <span className="font-bold">Vista de Administrador Activa:</span> Cualquier cambio que hagas en el título, categoría, descripción, clave o modalidad (Gratis $0 / $20 MXN) de cualquier PDF se <strong>actualiza al momento y al darle Guardar</strong> en todos tus dispositivos.
             </div>
           </div>
 
@@ -139,55 +170,78 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
       )}
 
       {/* Search & Filter Bar */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-emerald-100 shadow-sm mb-8 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por título de catálogo o categoría..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs sm:text-sm text-slate-800"
-          />
+      <div className="bg-white rounded-2xl p-4 sm:p-5 border-2 border-amber-200 shadow-sm mb-8 space-y-3">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar por título de catálogo, libro o categoría..."
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50/30 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-900 text-xs sm:text-sm text-slate-800"
+            />
+          </div>
+
+          {/* Filter Chips: Todos / Gratis / $20 MXN */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFilterType('all')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                filterType === 'all'
+                  ? 'bg-blue-950 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Todos ({pdfs.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('free')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
+                filterType === 'free'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Gratis $0 ({pdfs.filter((p) => Number(p.price) === 0).length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('paid')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                filterType === 'paid'
+                  ? 'bg-slate-900 text-amber-300 shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              De Pago $20 ({pdfs.filter((p) => Number(p.price) > 0).length})
+            </button>
+          </div>
         </div>
 
-        {/* Filter Chips: Todos / Gratis / $20 MXN */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setFilterType('all')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterType === 'all'
-                ? 'bg-emerald-700 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            Todos ({pdfs.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterType('free')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-              filterType === 'free'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Gratis $0 ({pdfs.filter(p => Number(p.price) === 0).length})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterType('paid')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterType === 'paid'
-                ? 'bg-slate-900 text-amber-300 shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            De Pago $20 ({pdfs.filter(p => Number(p.price) > 0).length})
-          </button>
-        </div>
+        {/* Category Filter Pills */}
+        {categories.length > 1 && (
+          <div className="flex items-center gap-2 overflow-x-auto pt-2 border-t border-amber-100 scrollbar-none">
+            <span className="text-[11px] font-bold text-slate-500 uppercase shrink-0">Categorías PDF:</span>
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                  selectedCategory === cat
+                    ? 'bg-amber-400 text-slate-950 shadow-2xs'
+                    : 'bg-amber-50 text-slate-700 hover:bg-amber-100 border border-amber-200'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* PDF Cards Grid */}
@@ -214,14 +268,14 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
             onClick={() => {
               setSearchTerm('');
               setFilterType('all');
+              setSelectedCategory('Todas');
             }}
             className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg"
           >
-            Ver todos los PDFs
+            Ver todos los PDFs ({pdfs.length})
           </button>
         </div>
       )}
-
     </section>
   );
 };

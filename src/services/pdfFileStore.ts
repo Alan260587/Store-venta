@@ -286,7 +286,7 @@ export const pdfFileStore = {
     }
   },
 
-  getFileUrl: async (pdfId: string): Promise<string | null> => {
+  getFileBlob: async (pdfId: string): Promise<Blob | null> => {
     // 1. Try local IndexedDB first for instant opening
     try {
       const idb = await openDatabase();
@@ -309,7 +309,7 @@ export const pdfFileStore = {
         };
       });
       if (localBlob) {
-        return URL.createObjectURL(localBlob);
+        return localBlob;
       }
     } catch {
       // Fall through to Cloud Server and Firebase
@@ -332,7 +332,7 @@ export const pdfFileStore = {
           } catch {
             // ignore
           }
-          return URL.createObjectURL(serverBlob);
+          return serverBlob;
         }
       }
     } catch {
@@ -353,10 +353,15 @@ export const pdfFileStore = {
         // ignore
       }
       void uploadBlobToServer(pdfId, firestoreBlob);
-      return URL.createObjectURL(firestoreBlob);
+      return firestoreBlob;
     }
 
     return null;
+  },
+
+  getFileUrl: async (pdfId: string): Promise<string | null> => {
+    const blob = await pdfFileStore.getFileBlob(pdfId);
+    return blob ? URL.createObjectURL(blob) : null;
   },
 
   deleteFile: async (pdfId: string): Promise<void> => {

@@ -139,11 +139,13 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
         </button>
 
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-            <Package className="w-5 h-5" />
-          </div>
+          <img
+            src="/assets/aistudio/shelon_logo_182b5079.jpeg"
+            alt="Sheló NABEL"
+            className="w-12 h-12 rounded-full object-cover border-2 border-amber-400 shadow-md shrink-0 bg-white"
+          />
           <div>
-            <h3 className="font-serif font-bold text-xl text-slate-900">Agregar Nuevo Artículo</h3>
+            <h3 className="font-serif font-bold text-xl text-slate-900">Agregar Nuevo Artículo Sheló NABEL</h3>
             <p className="text-xs text-slate-500">
               Al guardar, la página se actualiza automáticamente mostrando tu producto en el catálogo
             </p>
