@@ -97,7 +97,7 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/50 text-amber-200 text-xs font-bold mb-3">
                 <Gift className="w-3.5 h-3.5 text-amber-300" />
-                <span>Sheló NABEL • Jhosie Girón • Todos los PDFs por Defecto + Nuevos</span>
+                <span>Sheló NABEL • Jhosie Girón • Biblioteca de Catálogos y PDFs</span>
               </div>
 
               <h2 className="text-2xl sm:text-4xl font-serif font-extrabold text-white mb-2">
@@ -105,10 +105,10 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
               </h2>
 
               <p className="text-xs sm:text-sm text-amber-100/90 font-light leading-relaxed mb-4">
-                Todos los PDFs por defecto están conservados e incluidos. Los documentos{' '}
+                Sube tus propios catálogos y archivos PDF. Los documentos{' '}
                 <strong>Gratis ($0 MXN)</strong> tienen descarga libre inmediata, y los de{' '}
-                <strong>$20 MXN</strong> se descargan con Clave de Administrador. Cualquier cambio o
-                guardado se actualiza <strong>al momento</strong> en toda la página, Firebase y la nube.
+                <strong>$20 MXN</strong> se descargan con Clave de Administrador. Cualquier archivo subido
+                o editado se guarda y sincroniza <strong>al momento</strong> en todas tus computadoras y celulares.
               </p>
 
               <div className="flex flex-wrap items-center gap-2.5 text-xs text-emerald-200">
@@ -257,6 +257,26 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
               onDeletePdf={onDeletePdf}
             />
           ))}
+        </div>
+      ) : pdfs.length === 0 ? (
+        <div className="bg-white rounded-2xl p-12 text-center border-2 border-dashed border-amber-300 max-w-lg mx-auto my-8 shadow-xs">
+          <FileText className="w-14 h-14 text-amber-500 mx-auto mb-3" />
+          <h3 className="font-bold text-lg text-slate-900 mb-1">
+            Aún no hay archivos PDF cargados
+          </h3>
+          <p className="text-xs sm:text-sm text-slate-600 mb-5">
+            Todos los PDFs por defecto fueron retirados. Haz clic en el botón para subir tus propios archivos PDF (individuales o por lote) y se sincronizarán automáticamente en todas tus computadoras, celulares y tablets.
+          </p>
+          {onOpenAddPdf && (
+            <button
+              type="button"
+              onClick={onOpenAddPdf}
+              className="px-6 py-3 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs sm:text-sm font-extrabold rounded-xl shadow-md inline-flex items-center gap-2 transition-all"
+            >
+              <Upload className="w-4 h-4" />
+              <span>+ Subir Mis Archivos PDF</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 max-w-md mx-auto my-8">

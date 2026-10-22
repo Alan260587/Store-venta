@@ -1,0 +1,463 @@
+{
+  "products": [
+    {
+      "id": "school-01",
+      "clave": "ESC-01",
+      "name": "Folders Escolares",
+      "price": 25,
+      "size": "1 pza c/u",
+      "category": "Escolar y Accesorios",
+      "description": "Folders escolares resistentes en colores vivos (Morado, Amarillo, Naranja y Azul). Elige el color de tu preferencia para organizar documentos y tareas.",
+      "image": "data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20400%20400%22%20width%3D%22100%25%22%20height%3D%22100%25%22%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3Cfilter%20id%3D%22shadowN%22%20x%3D%22-10%25%22%20y%3D%22-10%25%22%20width%3D%22120%25%22%20height%3D%22120%25%22%3E%0A%20%20%20%20%20%20%3CfeDropShadow%20dx%3D%223%22%20dy%3D%225%22%20stdDeviation%3D%225%22%20flood-opacity%3D%220.25%22%2F%3E%0A%20%20%20%20%3C%2Ffilter%3E%0A%20%20%3C%2Fdefs%3E%0A%20%20%3C!--%20Background%20Tile%20--%3E%0A%20%20%3Crect%20width%3D%22400%22%20height%3D%22400%22%20fill%3D%22%23f8fafc%22%20rx%3D%2220%22%2F%3E%0A%20%20%3C!--%20Notebook%201%3A%20Purple%20(Leftmost)%20--%3E%0A%20%20%3Cg%20transform%3D%22translate(30%2C%2045)%22%20filter%3D%22url(%23shadowN)%22%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22130%22%20height%3D%22280%22%20rx%3D%226%22%20fill%3D%22%237c3aed%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2214%22%20height%3D%22280%22%20rx%3D%223%22%20fill%3D%22%236d28d9%22%2F%3E%0A%20%20%20%20%3C!--%20Spiral%20%2F%20margin%20line%20--%3E%0A%20%20%20%20%3Cline%20x1%3D%2214%22%20y1%3D%220%22%20x2%3D%2214%22%20y2%3D%22280%22%20stroke%3D%22%235b21b6%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%20%20%3C!--%20Notebook%202%3A%20Yellow%20--%3E%0A%20%20%3Cg%20transform%3D%22translate(100%2C%2040)%22%20filter%3D%22url(%23shadowN)%22%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22130%22%20height%3D%22285%22%20rx%3D%226%22%20fill%3D%22%23facc15%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2214%22%20height%3D%22285%22%20rx%3D%223%22%20fill%3D%22%23eab308%22%2F%3E%0A%20%20%20%20%3Cline%20x1%3D%2214%22%20y1%3D%220%22%20x2%3D%2214%22%20y2%3D%22285%22%20stroke%3D%22%23ca8a04%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%20%20%3C!--%20Notebook%203%3A%20Orange%20--%3E%0A%20%20%3Cg%20transform%3D%22translate(170%2C%2035)%22%20filter%3D%22url(%23shadowN)%22%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22130%22%20height%3D%22290%22%20rx%3D%226%22%20fill%3D%22%23f97316%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2214%22%20height%3D%22290%22%20rx%3D%223%22%20fill%3D%22%23ea580c%22%2F%3E%0A%20%20%20%20%3Cline%20x1%3D%2214%22%20y1%3D%220%22%20x2%3D%2214%22%20y2%3D%22290%22%20stroke%3D%22%23c2410c%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%20%20%3C!--%20Notebook%204%3A%20Bright%20Sky%20Blue%20(Rightmost)%20--%3E%0A%20%20%3Cg%20transform%3D%22translate(225%2C%2030)%22%20filter%3D%22url(%23shadowN)%22%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22145%22%20height%3D%22295%22%20rx%3D%228%22%20fill%3D%22%2338bdf8%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%2216%22%20height%3D%22295%22%20rx%3D%224%22%20fill%3D%22%230284c7%22%2F%3E%0A%20%20%20%20%3Cline%20x1%3D%2216%22%20y1%3D%220%22%20x2%3D%2216%22%20y2%3D%22295%22%20stroke%3D%22%230369a1%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%3C!--%20subtle%20texture%20lines%20--%3E%0A%20%20%20%20%3Cline%20x1%3D%2230%22%20y1%3D%2250%22%20x2%3D%22135%22%20y2%3D%2250%22%20stroke%3D%22%237dd3fc%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%20%20%3Cline%20x1%3D%2230%22%20y1%3D%2270%22%20x2%3D%22135%22%20y2%3D%2270%22%20stroke%3D%22%237dd3fc%22%20stroke-width%3D%221%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%20%20%3C!--%20Price%20Badge%20at%20Bottom%20Center%20matching%20image%20(%2425%20c%2Fu)%20--%3E%0A%20%20%3Cg%20transform%3D%22translate(130%2C%20320)%22%20filter%3D%22url(%23shadowN)%22%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22140%22%20height%3D%2252%22%20rx%3D%2210%22%20fill%3D%22white%22%20stroke%3D%22%23334155%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%2270%22%20y%3D%2237%22%20fill%3D%22%230f172a%22%20font-size%3D%2228%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22bold%22%20text-anchor%3D%22middle%22%3E%2425%20c%2Fu%3C%2Ftext%3E%0A%20%20%3C%2Fg%3E%0A%3C%2Fsvg%3E%0A",
+      "isStarProduct": true,
+      "isNew": true,
+      "availableColors": [
+        {
+          "name": "Morado",
+          "hex": "#7c3aed"
+        },
+        {
+          "name": "Amarillo",
+          "hex": "#facc15"
+        },
+        {
+          "name": "Naranja",
+          "hex": "#f97316"
+        },
+        {
+          "name": "Azul",
+          "hex": "#38bdf8"
+        }
+      ],
+      "updatedAt": 1792671332196
+    },
+    {
+      "id": "school-02",
+      "clave": "ESC-02",
+      "name": "Tijeras Westcott",
+      "price": 35,
+      "size": "1 pza (2 Pack)",
+      "category": "Escolar y Accesorios",
+      "description": "Tijeras escolares Westcott para niños (Ages 6+), punta roma \"Pointed Tip\", hojas de acero inoxidable durable y mango ergonómico verde y amarillo.",
+      "image": "data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20400%20400%22%20width%3D%22100%25%22%20height%3D%22100%25%22%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3ClinearGradient%20id%3D%22cardGrad%22%20x1%3D%220%25%22%20y1%3D%220%25%22%20x2%3D%22100%25%22%20y2%3D%22100%25%22%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%23f8fafc%22%2F%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23e2e8f0%22%2F%3E%0A%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3Cfilter%20id%3D%22shadow%22%20x%3D%22-10%25%22%20y%3D%22-10%25%22%20width%3D%22120%25%22%20height%3D%22120%25%22%3E%0A%20%20%20%20%20%20%3CfeDropShadow%20dx%3D%222%22%20dy%3D%224%22%20stdDeviation%3D%224%22%20flood-opacity%3D%220.15%22%2F%3E%0A%20%20%20%20%3C%2Ffilter%3E%0A%20%20%3C%2Fdefs%3E%0A%20%20%3C!--%20Background%20Card%20--%3E%0A%20%20%3Crect%20width%3D%22400%22%20height%3D%22400%22%20fill%3D%22%23f1f5f9%22%20rx%3D%2220%22%2F%3E%0A%20%20%3C!--%20Blister%20Package%20--%3E%0A%20%20%3Crect%20x%3D%2250%22%20y%3D%2225%22%20width%3D%22300%22%20height%3D%22350%22%20rx%3D%2224%22%20fill%3D%22white%22%20stroke%3D%22%23cbd5e1%22%20stroke-width%3D%222%22%20filter%3D%22url(%23shadow)%22%2F%3E%0A%20%20%3C!--%20Hang%20Hole%20--%3E%0A%20%20%3Crect%20x%3D%22160%22%20y%3D%2240%22%20width%3D%2280%22%20height%3D%2214%22%20rx%3D%227%22%20fill%3D%22%23e2e8f0%22%2F%3E%0A%20%20%3C!--%20Top%20Blue%20Banner%20--%3E%0A%20%20%3Cpath%20d%3D%22M%20230%2025%20L%20350%2025%20L%20350%2085%20Z%22%20fill%3D%22%231e40af%22%2F%3E%0A%20%20%3Ctext%20x%3D%22340%22%20y%3D%2248%22%20fill%3D%22white%22%20font-size%3D%229%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22bold%22%20text-anchor%3D%22end%22%3EWORLD'S%3C%2Ftext%3E%0A%20%20%3Ctext%20x%3D%22340%22%20y%3D%2258%22%20fill%3D%22white%22%20font-size%3D%228%22%20font-family%3D%22sans-serif%22%20text-anchor%3D%22end%22%3EFAVORITE%20SCISSORS%3C%2Ftext%3E%0A%20%20%3C!--%20Brand%20Logo%20--%3E%0A%20%20%3Ctext%20x%3D%22200%22%20y%3D%2295%22%20fill%3D%22%231e3a8a%22%20font-size%3D%2228%22%20font-family%3D%22Impact%2C%20sans-serif%22%20font-weight%3D%22bold%22%20text-anchor%3D%22middle%22%20letter-spacing%3D%221%22%3EWESTCOTT%3C%2Ftext%3E%0A%20%20%3Ctext%20x%3D%22200%22%20y%3D%22110%22%20fill%3D%22%2364748b%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%20text-anchor%3D%22middle%22%3ESince%201872%3C%2Ftext%3E%0A%20%20%3C!--%20Price%20Tag%20Badge%20--%3E%0A%20%20%3Crect%20x%3D%22235%22%20y%3D%2270%22%20width%3D%2285%22%20height%3D%2248%22%20rx%3D%228%22%20fill%3D%22white%22%20stroke%3D%22%23334155%22%20stroke-width%3D%221.5%22%20filter%3D%22url(%23shadow)%22%2F%3E%0A%20%20%3Ctext%20x%3D%22277%22%20y%3D%22104%22%20fill%3D%22%230f172a%22%20font-size%3D%2226%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22bold%22%20text-anchor%3D%22middle%22%3E%2435%3C%2Ftext%3E%0A%20%20%3C!--%20Ages%20Badge%20--%3E%0A%20%20%3Crect%20x%3D%2265%22%20y%3D%22125%22%20width%3D%2270%22%20height%3D%2220%22%20rx%3D%2210%22%20fill%3D%22%23dc2626%22%2F%3E%0A%20%20%3Ctext%20x%3D%22100%22%20y%3D%22139%22%20fill%3D%22white%22%20font-size%3D%2210%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22bold%22%20text-anchor%3D%22middle%22%3EAGES%206%2B%3C%2Ftext%3E%0A%20%20%3Ctext%20x%3D%22100%22%20y%3D%22160%22%20fill%3D%22%23dc2626%22%20font-size%3D%2212%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22bold%22%20text-anchor%3D%22middle%22%3EPointed%20Tip%3C%2Ftext%3E%0A%20%20%3C!--%20For%20Kids%20Vertical%20--%3E%0A%20%20%3Ctext%20x%3D%2275%22%20y%3D%22270%22%20fill%3D%22%23ea580c%22%20font-size%3D%2220%22%20font-family%3D%22Impact%2C%20sans-serif%22%20transform%3D%22rotate(-90%2075%20270)%22%3EFOR%20KIDS%3C%2Ftext%3E%0A%20%20%3C!--%20Scissors%20Visual%20in%20Center%20--%3E%0A%20%20%3C!--%20Blades%20--%3E%0A%20%20%3Cpolygon%20points%3D%22190%2C140%20210%2C140%20206%2C230%20194%2C230%22%20fill%3D%22%2394a3b8%22%2F%3E%0A%20%20%3Cpolygon%20points%3D%22194%2C140%20206%2C140%20203%2C230%20197%2C230%22%20fill%3D%22%23cbd5e1%22%2F%3E%0A%20%20%3C!--%20Pivot%20screw%20--%3E%0A%20%20%3Ccircle%20cx%3D%22200%22%20cy%3D%22225%22%20r%3D%225%22%20fill%3D%22%23475569%22%2F%3E%0A%20%20%3C!--%20Handles%20(Green%20%26%20Yellow)%20--%3E%0A%20%20%3C!--%20Left%20Handle%20(Yellow)%20--%3E%0A%20%20%3Cellipse%20cx%3D%22170%22%20cy%3D%22275%22%20rx%3D%2232%22%20ry%3D%2245%22%20fill%3D%22none%22%20stroke%3D%22%23eab308%22%20stroke-width%3D%2216%22%20transform%3D%22rotate(-20%20170%20275)%22%2F%3E%0A%20%20%3C!--%20Right%20Handle%20(Green)%20--%3E%0A%20%20%3Cellipse%20cx%3D%22230%22%20cy%3D%22285%22%20rx%3D%2234%22%20ry%3D%2248%22%20fill%3D%22none%22%20stroke%3D%22%2322c55e%22%20stroke-width%3D%2216%22%20transform%3D%22rotate(15%20230%20285)%22%2F%3E%0A%20%20%3C!--%20Central%20joint%20--%3E%0A%20%20%3Ccircle%20cx%3D%22200%22%20cy%3D%22245%22%20r%3D%2214%22%20fill%3D%22%2322c55e%22%2F%3E%0A%20%20%3C!--%20Product%20bullet%20features%20--%3E%0A%20%20%3Ctext%20x%3D%22315%22%20y%3D%22200%22%20fill%3D%22%23334155%22%20font-size%3D%229%22%20font-family%3D%22sans-serif%22%20text-anchor%3D%22end%22%3E%E2%96%B6%20Durable%20stainless%20steel%20blades%3C%2Ftext%3E%0A%20%20%3Ctext%20x%3D%22315%22%20y%3D%22220%22%20fill%3D%22%23334155%22%20font-size%3D%229%22%20font-family%3D%22sans-serif%22%20text-anchor%3D%22end%22%3E%E2%96%B6%20Left%20or%20right%20handed%3C%2Ftext%3E%0A%20%20%3Ctext%20x%3D%22315%22%20y%3D%22240%22%20fill%3D%22%23334155%22%20font-size%3D%229%22%20font-family%3D%22sans-serif%22%20text-anchor%3D%22end%22%3E%E2%96%B6%205%20year%20warranty%3C%2Ftext%3E%0A%20%20%3C!--%202%20Pack%20Badge%20--%3E%0A%20%20%3Ccircle%20cx%3D%22295%22%20cy%3D%22315%22%20r%3D%2224%22%20fill%3D%22%23f8fafc%22%20stroke%3D%22%233b82f6%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%3Ctext%20x%3D%22295%22%20y%3D%22318%22%20fill%3D%22%231d4ed8%22%20font-size%3D%2210%22%20font-family%3D%22Impact%2C%20sans-serif%22%20text-anchor%3D%22middle%22%3E2%20PACK%3C%2Ftext%3E%0A%3C%2Fsvg%3E%0A",
+      "isStarProduct": true,
+      "isNew": true
+    },
+    {
+      "id": "school-03",
+      "clave": "ESC-03",
+      "name": "Crayones Crayola 24",
+      "price": 40,
+      "size": "Caja con 24 piezas",
+      "category": "Escolar y Accesorios",
+      "description": "Caja con 24 crayones de cera Crayola no tóxicos. La marca #1 preferida por padres y maestros con colores intensos y trazo suave.",
+      "image": "data:image/svg+xml;utf8,%0A%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20400%20400%22%20width%3D%22100%25%22%20height%3D%22100%25%22%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3Cfilter%20id%3D%22crayShadow%22%20x%3D%22-10%25%22%20y%3D%22-10%25%22%20width%3D%22120%25%22%20height%3D%22120%25%22%3E%0A%20%20%20%20%20%20%3CfeDropShadow%20dx%3D%223%22%20dy%3D%225%22%20stdDeviation%3D%225%22%20flood-opacity%3D%220.25%22%2F%3E%0A%20%20%20%20%3C%2Ffilter%3E%0A%20%20%3C%2Fdefs%3E%0A%20%20%3C!--%20Background%20--%3E%0A%20%20%3Crect%20width%3D%22400%22%20height%3D%22400%22%20fill%3D%22%23f8fafc%22%20rx%3D%2220%22%2F%3E%0A%20%20%3C!--%20Crayola%20Box%20--%3E%0A%20%20%3Cg%20transform%3D%22translate(65%2C%2045)%22%20filter%3D%22url(%23crayShadow)%22%3E%0A%20%20%20%20%3C!--%20Yellow%20Box%20Body%20--%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22270%22%20height%3D%22320%22%20rx%3D%2214%22%20fill%3D%22%23facc15%22%20stroke%3D%22%23ca8a04%22%20stroke-width%3D%222%22%2F%3E%0A%20%20%20%20%3C!--%20Top%20Green%20Header%20tab%20--%3E%0A%20%20%20%20%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22270%22%20height%3D%2260%22%20rx%3D%2214%22%20fill%3D%22%2315803d%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2295%22%20y%3D%2212%22%20width%3D%2280%22%20height%3D%2214%22%20rx%3D%227%22%20fill%3D%22%2314532d%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%2245%22%20y%3D%2244%22%20fill%3D%22white%22%20font-size%3D%2234%22%20font-family%3D%22Impact%2C%20sans-serif%22%20font-weight%3D%22bold%22%3E24%3C%2Ftext%3E%0A%20%20%20%20%3C!--%20Price%20Badge%20Top%20Right%20(%2440)%20--%3E%0A%20%20%20%20%3Crect%20x%3D%22180%22%20y%3D%2215%22%20width%3D%2280%22%20height%3D%2245%22%20rx%3D%228%22%20fill%3D%22white%22%20stroke%3D%22%23334155%22%20stroke-width%3D%221.5%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%22220%22%20y%3D%2247%22%20fill%3D%22%230f172a%22%20font-size%3D%2226%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22bold%22%20text-anchor%3D%22middle%22%3E%2440%3C%2Ftext%3E%0A%20%20%20%20%3C!--%20Brand%20Name%20Crayola%20with%20iconic%20green%20contour%20--%3E%0A%20%20%20%20%3Ctext%20x%3D%22135%22%20y%3D%22105%22%20fill%3D%22%2315803d%22%20font-size%3D%2244%22%20font-family%3D%22Arial%2C%20sans-serif%22%20font-weight%3D%22bold%22%20font-style%3D%22italic%22%20text-anchor%3D%22middle%22%3ECrayola%3C%2Ftext%3E%0A%20%20%20%20%3C!--%20Die-cut%20Smile%20Window%20showing%20crayons%20inside%20--%3E%0A%20%20%20%20%3Cpath%20d%3D%22M%2035%20120%20Q%20135%20185%20235%20120%20Q%20235%20140%20135%20170%20Q%2035%20140%2035%20120%20Z%22%20fill%3D%22%231e293b%22%2F%3E%0A%20%20%20%20%3C!--%20Crayons%20in%20Window%20--%3E%0A%20%20%20%20%3Crect%20x%3D%2255%22%20y%3D%22125%22%20width%3D%2218%22%20height%3D%2240%22%20rx%3D%223%22%20fill%3D%22%23ef4444%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2280%22%20y%3D%22130%22%20width%3D%2218%22%20height%3D%2240%22%20rx%3D%223%22%20fill%3D%22%23f97316%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22105%22%20y%3D%22132%22%20width%3D%2218%22%20height%3D%2240%22%20rx%3D%223%22%20fill%3D%22%23eab308%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22130%22%20y%3D%22133%22%20width%3D%2218%22%20height%3D%2240%22%20rx%3D%223%22%20fill%3D%22%2322c55e%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22155%22%20y%3D%22130%22%20width%3D%2218%22%20height%3D%2240%22%20rx%3D%223%22%20fill%3D%22%2306b6d4%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22180%22%20y%3D%22125%22%20width%3D%2218%22%20height%3D%2240%22%20rx%3D%223%22%20fill%3D%22%233b82f6%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%22205%22%20y%3D%22120%22%20width%3D%2218%22%20height%3D%2240%22%20rx%3D%223%22%20fill%3D%22%238b5cf6%22%2F%3E%0A%20%20%20%20%3C!--%20Red%20Ribbon%20Banner%20--%3E%0A%20%20%20%20%3Cpath%20d%3D%22M%2025%20180%20L%20245%20180%20L%20235%20210%20L%20245%20210%20L%2025%20210%20Z%22%20fill%3D%22%23b91c1c%22%20rx%3D%224%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%2250%22%20y%3D%22202%22%20fill%3D%22white%22%20font-size%3D%2224%22%20font-family%3D%22Impact%2C%20sans-serif%22%3E%231%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%2280%22%20y%3D%22195%22%20fill%3D%22white%22%20font-size%3D%2211%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22bold%22%3EBrand%20Preferred%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%2280%22%20y%3D%22207%22%20fill%3D%22white%22%20font-size%3D%229%22%20font-family%3D%22sans-serif%22%3Eby%20Parents%20%26amp%3B%20Teachers%3C%2Ftext%3E%0A%20%20%20%20%3C!--%20CRAYONS%20Large%20Title%20--%3E%0A%20%20%20%20%3Ctext%20x%3D%22135%22%20y%3D%22248%22%20fill%3D%22%23dc2626%22%20font-size%3D%2242%22%20font-family%3D%22Impact%2C%20sans-serif%22%20text-anchor%3D%22middle%22%20letter-spacing%3D%221%22%3ECRAYONS%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%22135%22%20y%3D%22248%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20font-size%3D%2242%22%20font-family%3D%22Impact%2C%20sans-serif%22%20text-anchor%3D%22middle%22%20letter-spacing%3D%221%22%3ECRAYONS%3C%2Ftext%3E%0A%20%20%20%20%3C!--%20Green%20Diagonal%20Chevron%20Stripes%20on%20sides%20--%3E%0A%20%20%20%20%3Cline%20x1%3D%2215%22%20y1%3D%22230%22%20x2%3D%2255%22%20y2%3D%22300%22%20stroke%3D%22%2315803d%22%20stroke-width%3D%228%22%2F%3E%0A%20%20%20%20%3Cline%20x1%3D%2230%22%20y1%3D%22230%22%20x2%3D%2270%22%20y2%3D%22300%22%20stroke%3D%22%2315803d%22%20stroke-width%3D%228%22%2F%3E%0A%20%20%20%20%3Cline%20x1%3D%22255%22%20y1%3D%22230%22%20x2%3D%22215%22%20y2%3D%22300%22%20stroke%3D%22%2315803d%22%20stroke-width%3D%228%22%2F%3E%0A%20%20%20%20%3Cline%20x1%3D%22240%22%20y1%3D%22230%22%20x2%3D%22200%22%20y2%3D%22300%22%20stroke%3D%22%2315803d%22%20stroke-width%3D%228%22%2F%3E%0A%20%20%20%20%3C!--%20Badge%2024%20--%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22135%22%20cy%3D%22285%22%20r%3D%2222%22%20fill%3D%22%23b91c1c%22%2F%3E%0A%20%20%20%20%3Ctext%20x%3D%22135%22%20y%3D%22293%22%20fill%3D%22white%22%20font-size%3D%2222%22%20font-family%3D%22Impact%2C%20sans-serif%22%20text-anchor%3D%22middle%22%3E24%3C%2Ftext%3E%0A%20%20%3C%2Fg%3E%0A%3C%2Fsvg%3E%0A",
+      "isStarProduct": true,
+      "isNew": true
+    },
+    {
+      "id": "p-1701",
+      "clave": "S1701",
+      "name": "Baba de Caracol Crema Facial",
+      "price": 149,
+      "size": "100 ml",
+      "category": "Cuidado Facial",
+      "description": "Todos los beneficios de la alantoína, el colágeno y la elastina. Nuestro clásico favorito en una versión práctica para llevar a todos lados.",
+      "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    },
+    {
+      "id": "p-1703",
+      "clave": "S1703",
+      "name": "Agua Termal",
+      "price": 199,
+      "size": "140 ml",
+      "category": "Cuidado Facial",
+      "description": "Hidratación pura que ayuda a mantener la comodidad y el equilibrio de tu rostro durante todo el día. ¡Está de regreso!",
+      "image": "https://images.unsplash.com/photo-1608248597379-24233777f722?auto=format&fit=crop&w=600&q=80",
+      "isNew": true
+    },
+    {
+      "id": "p-1706",
+      "clave": "S1706",
+      "name": "Melena de León con Antocianinas",
+      "price": 399,
+      "size": "250 g",
+      "category": "Salud y Bienestar",
+      "description": "Combinación del hongo melena de león y antocianinas del arándano. Sabor arándano. Suplemento alimenticio para claridad y enfoque.",
+      "image": "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=600&q=80",
+      "isNew": true
+    },
+    {
+      "id": "p-1704",
+      "clave": "S1704",
+      "name": "Rhodiola Suplemento Alimenticio",
+      "price": 399,
+      "size": "250 g",
+      "category": "Salud y Bienestar",
+      "description": "Planta tradicionalmente asociada al bienestar durante momentos de exigencia física o mental. Con piña y fresa.",
+      "image": "https://images.unsplash.com/photo-1577401239170-897942555fb3?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1707",
+      "clave": "S1707",
+      "name": "NAD Colágeno Hidrolizado + Resveratrol",
+      "price": 579,
+      "size": "250 g",
+      "category": "Salud y Bienestar",
+      "description": "Fórmula con pulpa de frutas deshidratadas que apoya los procesos energéticos, cuidado integral y protección antioxidante.",
+      "image": "https://images.unsplash.com/photo-1550572017-edf703cf0514?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    },
+    {
+      "id": "p-1708",
+      "clave": "S1708",
+      "name": "Triple Extracto de Ajo",
+      "price": 304,
+      "size": "30 ml",
+      "category": "Salud y Bienestar",
+      "description": "Ajo blanco, ajo negro y ajo japonés reunidos para ofrecer máxima concentración que impulsa tu equilibrio interno.",
+      "image": "https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1712",
+      "clave": "S1712",
+      "name": "Ciruelo Africano & Sabal",
+      "price": 524,
+      "size": "20 sobres de 25g",
+      "category": "Salud y Bienestar",
+      "description": "Ciruelo africano y sabal en perfecta sinergia para acompañar el bienestar del hombre en cada etapa.",
+      "image": "https://images.unsplash.com/photo-1512069772995-ec65ed45afd6?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1705",
+      "clave": "S1705",
+      "name": "L-Glutamina Suplemento",
+      "price": 550,
+      "size": "250 g",
+      "category": "Salud y Bienestar",
+      "description": "Aminoácido fundamental para periodos de mayor exigencia física. Delicioso sabor con piña, mango y coco.",
+      "image": "https://images.unsplash.com/photo-1593095948071-474c5cc2989d?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1713",
+      "clave": "S1713",
+      "name": "Vita Niños Tabletas",
+      "price": 259,
+      "size": "60 tabletas",
+      "category": "Línea Infantil",
+      "description": "Con aislado de suero de leche, simbióticos, vitaminas B1 y B6 y magnesio para complementar la nutrición de niños en crecimiento.",
+      "image": "https://images.unsplash.com/photo-1584017911766-d451b3d0e843?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1711",
+      "clave": "S1711",
+      "name": "Suero de Centella Asiática",
+      "price": 229,
+      "size": "30 ml",
+      "category": "Cuidado Facial",
+      "description": "Formulado con naringenina y extractos botánicos. Fresco, ligero y efectivo para proteger y regenerar la piel.",
+      "image": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=600&q=80",
+      "isNew": true
+    },
+    {
+      "id": "p-1702",
+      "clave": "S1702",
+      "name": "Crema de Nopal Hidratante Facial",
+      "price": 149,
+      "size": "100 ml",
+      "category": "Cuidado Facial",
+      "description": "Luminosidad e hidratación profunda inspirada en un ingrediente icónico de México que da vida a tu piel.",
+      "image": "https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1710",
+      "clave": "S1710",
+      "name": "Barra Multiusos Labios y Mejillas - Cereza",
+      "price": 199,
+      "size": "6 g",
+      "category": "Cosméticos y Aromas",
+      "description": "Fórmula cremosa y suave con manteca de cacao y aceite de almendras para un acabado natural y radiante.",
+      "image": "https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1709",
+      "clave": "S1709",
+      "name": "Barra Multiusos Labios y Mejillas - Durazno",
+      "price": 199,
+      "size": "6 g",
+      "category": "Cosméticos y Aromas",
+      "description": "Resalta tus labios y mejillas con un toque cálido de color durazno. Enriquecido con manteca de cacao.",
+      "image": "https://images.unsplash.com/photo-1631729371254-42c2892f0e6e?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1622",
+      "clave": "S1622",
+      "name": "Gotas de Zinc",
+      "price": 237,
+      "size": "30 ml",
+      "category": "Salud y Bienestar",
+      "description": "Aporta zinc, mineral esencial para el sistema inmunológico y el organismo.",
+      "image": "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s514",
+      "clave": "S514",
+      "name": "SN-S3 Pasiflora, Melisa y Valeriana",
+      "price": 314,
+      "size": "30 ml",
+      "category": "Salud y Bienestar",
+      "description": "Extracto líquido de pasiflora, melisa y valeriana. Tu apoyo ideal para relajarte en los días más intensos.",
+      "image": "https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1623",
+      "clave": "S1623",
+      "name": "Polvo con Citrato de Magnesio",
+      "price": 525,
+      "size": "250 g",
+      "category": "Salud y Bienestar",
+      "description": "Un aliado esencial para el equilibrio muscular, nervioso y el bienestar diario.",
+      "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1311",
+      "clave": "S1311",
+      "name": "Ashwagandha Adaptógeno Natural",
+      "price": 583,
+      "size": "20 sobres de 10g",
+      "category": "Salud y Bienestar",
+      "description": "Adaptógeno natural para equilibrar el ritmo del día a día con pulpa de durazno y manzana.",
+      "image": "https://images.unsplash.com/photo-1512069772995-ec65ed45afd6?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-1310",
+      "clave": "S1310",
+      "name": "Bacopa Monnieri Suplemento",
+      "price": 583,
+      "size": "20 sobres de 10 g c/u",
+      "category": "Salud y Bienestar",
+      "description": "Apoyo diario para una mente en calma inspirada en la sabiduría ancestral, con pulpa de guayaba y naranja.",
+      "image": "https://images.unsplash.com/photo-1512069772995-ec65ed45afd6?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-303",
+      "clave": "S303",
+      "name": "Complejo B Sabor Naranja",
+      "price": 524,
+      "size": "20 sobres de 10g",
+      "category": "Salud y Bienestar",
+      "description": "Con 7 vitaminas del complejo B (B1, B2, B3, B5, B6, B9, B12), más inositol y biotina. ¡Energía y concentración!",
+      "image": "https://images.unsplash.com/photo-1577401239170-897942555fb3?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-302",
+      "clave": "S302",
+      "name": "Complejo B Sabor Moras",
+      "price": 524,
+      "size": "20 sobres de 10g",
+      "category": "Salud y Bienestar",
+      "description": "Con 7 vitaminas del complejo B (B1, B2, B3, B5, B6, B9, B12), más inositol y biotina. Delicioso sabor moras.",
+      "image": "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s731",
+      "clave": "S731",
+      "name": "Shampoo de Cola de Caballo",
+      "price": 398,
+      "size": "950 ml",
+      "category": "Cuidado Capilar",
+      "description": "Nutre y fortalece el folículo capilar, dejando el cabello visiblemente más brillante y sedoso.",
+      "image": "https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s1612",
+      "clave": "S1612",
+      "name": "Shampoo de Cebolla Antioxidante",
+      "price": 158,
+      "size": "530 ml",
+      "category": "Cuidado Capilar",
+      "description": "Cebolla y linaza para una limpieza profunda que fortalece desde la raíz y protege el cuero cabelludo.",
+      "image": "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s1012",
+      "clave": "S1012",
+      "name": "Shampoo de Bergamota con Minoxidil",
+      "price": 258,
+      "size": "530 ml",
+      "category": "Cuidado Capilar",
+      "description": "Ideal para fortalecer el cuero cabelludo, estimular el crecimiento y mejorar el grosor capilar.",
+      "image": "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    },
+    {
+      "id": "p-s060",
+      "clave": "S060",
+      "name": "Hielo Mineral Spray Refrescante",
+      "price": 314,
+      "size": "265 ml",
+      "category": "Cuidado Corporal",
+      "description": "Spray refrescante con mentol y eucalipto para sensación de alivio inmediato después del esfuerzo físico.",
+      "image": "https://images.unsplash.com/photo-1617897903246-719242758050?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    },
+    {
+      "id": "p-s061",
+      "clave": "S061",
+      "name": "Gel Tópico Therapygel",
+      "price": 251,
+      "size": "250 ml",
+      "category": "Cuidado Corporal",
+      "description": "Con mentol, extracto de menta piperita y alcanfor. Proporciona una sensación de descanso refrescante.",
+      "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s001",
+      "clave": "S001",
+      "name": "Baba de Caracol Crema Facial Grande",
+      "price": 304,
+      "size": "250 ml",
+      "category": "Cuidado Facial",
+      "description": "Formato familiar. Ideal para mantener una piel renovada, firme e hidratada con extracto concentrado de baba de caracol.",
+      "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    },
+    {
+      "id": "p-s161",
+      "clave": "S161",
+      "name": "Baba de Caracol Jabón Facial y Corporal",
+      "price": 83,
+      "size": "100 g",
+      "category": "Cuidado Facial",
+      "description": "Limpieza profunda y cuidado reparador en un solo paso. Deja tu piel suave y tersa.",
+      "image": "https://images.unsplash.com/photo-1607006482172-326174867582?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    },
+    {
+      "id": "p-s156",
+      "clave": "S156",
+      "name": "Baba de Caracol Crema Corporal",
+      "price": 394,
+      "size": "950 ml",
+      "category": "Cuidado Corporal",
+      "description": "Hidratación intensa y renovación diaria para todo el cuerpo con el poder regenerador de la alantoína.",
+      "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    },
+    {
+      "id": "p-s054",
+      "clave": "S054",
+      "name": "Shampoo de Jitomate",
+      "price": 209,
+      "size": "530 ml",
+      "category": "Cuidado Capilar",
+      "description": "Enriquecido con jitomate, bardana, enebro y limón. Una mezcla perfecta para estimular el crecimiento capilar.",
+      "image": "https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s168",
+      "clave": "S168",
+      "name": "Shampoo de Manzanilla",
+      "price": 199,
+      "size": "530 ml",
+      "category": "Cuidado Capilar",
+      "description": "Aclara el tono del cabello de forma natural, realza su brillo dorado y proporciona frescura en el cuero cabelludo.",
+      "image": "https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s050",
+      "clave": "S050",
+      "name": "Shampoo Adiós Caspa",
+      "price": 237,
+      "size": "530 ml",
+      "category": "Cuidado Capilar",
+      "description": "Limpieza efectiva y cuero cabelludo sano gracias a la piritiona de zinc purificante.",
+      "image": "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s1306",
+      "clave": "S1306",
+      "name": "Suero Facial 2% Ácido Hialurónico",
+      "price": 352,
+      "size": "30 ml",
+      "category": "Cuidado Facial",
+      "description": "Ácido hialurónico con vitaminas B5 y B3. Hidratación diaria profunda de día y noche.",
+      "image": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    },
+    {
+      "id": "p-s1305",
+      "clave": "S1305",
+      "name": "Suero Facial Vitamina C 2.5%",
+      "price": 352,
+      "size": "30 ml",
+      "category": "Cuidado Facial",
+      "description": "Vitamina C y vitamina E, potentes antioxidantes para dar luminosidad y juventud a la piel.",
+      "image": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s501",
+      "clave": "S501",
+      "name": "Natural Pasta Dental con Sábila",
+      "price": 230,
+      "size": "100 ml",
+      "category": "Cuidado Facial",
+      "description": "Enriquecida con coenzima Q10, extractos de manzanilla, salvia, aloe vera y mentol para frescura duradera.",
+      "image": "https://images.unsplash.com/photo-1559599101-f09722fb4948?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      "id": "p-s021",
+      "clave": "S021",
+      "name": "Jabón Leche de Burra",
+      "price": 83,
+      "size": "100 g",
+      "category": "Cuidado Corporal",
+      "description": "Suavidad y tono uniforme con activos limpiadores e hidratantes que respetan la piel.",
+      "image": "https://images.unsplash.com/photo-1607006482172-326174867582?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    },
+    {
+      "id": "p-s906",
+      "clave": "S906",
+      "name": "Jabón Carbón Activado",
+      "price": 100,
+      "size": "100 g",
+      "category": "Cuidado Facial",
+      "description": "Aceite de coco y carbón activado que absorbe la grasa y elimina impurezas. Ideal para piel mixta o grasa.",
+      "image": "https://images.unsplash.com/photo-1607006482172-326174867582?auto=format&fit=crop&w=600&q=80",
+      "isStarProduct": true
+    }
+  ],
+  "pdfs": [],
+  "deletedProductIds": [],
+  "deletedPdfIds": [
+    "pdf-1792674344869-0-eqy1e",
+    "pdf-1792722675929-0-64vng",
+    "pdf-1792671810009-fq526",
+    "pdf-1792671805020-x38uz",
+    "pdf-1792671804050-ysn27",
+    "pdf-1792671802945-2upds",
+    "pdf-1792671801677-mivvc",
+    "pdf-1792671798057-thqdz",
+    "pdf-1792671794124-ysmm9",
+    "pdf-1792671791043-c7nfg",
+    "pdf-1792235643482-0-83tsx9c",
+    "pdf-1792235591696-0-b1hbrmb",
+    "pdf-1792235479796-0-664szsk",
+    "pdf-1792235398679-0-sphyfvy",
+    "pdf-1792235241425-0-xbhyzbw",
+    "pdf-1792235035400-0-0zwhdam",
+    "pdf-1792234881416-giigj9c",
+    "pdf-1792234690501-0-88iju7x",
+    "pdf-1792234520165-0-n5ohrs5",
+    "pdf-1792234174838-0-mhpub0g",
+    "pdf-1792234110462-0-dayjnbi",
+    "pdf-1792232922999-705",
+    "pdf-001",
+    "pdf-002",
+    "pdf-003",
+    "pdf-004",
+    "pdf-005"
+  ]
+}

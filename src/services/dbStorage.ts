@@ -1,6 +1,6 @@
 import { Product, PdfDocument, MultiUserPresence } from '../types';
 import { INITIAL_PRODUCTS } from '../data/initialProducts';
-import { INITIAL_PDFS, PROTECTED_DEFAULT_PDF_IDS } from '../data/initialPdfs';
+import { INITIAL_PDFS, PROTECTED_DEFAULT_PDF_IDS, REMOVED_DEFAULT_PDF_IDS } from '../data/initialPdfs';
 import { pdfFileStore } from './pdfFileStore';
 import {
   db,
@@ -250,9 +250,8 @@ function mergePdfLists(
   listB: PdfDocument[],
   deletedIds: string[]
 ): PdfDocument[] {
-  // Never allow the 17 core default PDFs to be removed
   const deletedSet = new Set(
-    deletedIds.filter((id) => !protectedPdfIdsSet.has(id))
+    [...REMOVED_DEFAULT_PDF_IDS, ...deletedIds].filter((id) => !protectedPdfIdsSet.has(id))
   );
   const map = new Map<string, PdfDocument>();
 
@@ -573,6 +572,7 @@ export const dbStorage = {
       const deletedPdfs = Array.from(
         new Set(
           [
+            ...REMOVED_DEFAULT_PDF_IDS,
             ...prevDeletedPdfs,
             ...(Array.isArray(data.deletedPdfIds) ? data.deletedPdfIds : [])
           ].filter((id) => !protectedPdfIdsSet.has(id))
@@ -957,13 +957,15 @@ export const dbStorage = {
   // --- PDFS CRUD (Up to 500 PDFs, supports Free $0 or $20 MXN + Admin Download Key) ---
   getPdfs: (): PdfDocument[] => {
     try {
-      const deletedIds = getDeletedIds(DELETED_PDFS_KEY);
+      const deletedIds = Array.from(
+        new Set([...REMOVED_DEFAULT_PDF_IDS, ...getDeletedIds(DELETED_PDFS_KEY)])
+      );
       const raw = localStorage.getItem(PDFS_STORAGE_KEY);
       const currentList: PdfDocument[] = raw ? JSON.parse(raw) : [];
       const legacyList = readLegacyArray<PdfDocument>(LEGACY_PDF_KEYS);
 
       const merged = mergePdfLists(currentList, legacyList, deletedIds);
-      if (!raw || legacyList.length > 0) {
+      if (!raw || legacyList.length > 0 || currentList.length !== merged.length) {
         dbStorage.savePdfs(merged);
       }
       return merged;

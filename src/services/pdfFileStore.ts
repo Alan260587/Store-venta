@@ -20,6 +20,9 @@ import {
   OperationType,
   handleFirestoreError
 } from '../firebase';
+import { REMOVED_DEFAULT_PDF_IDS } from '../data/initialPdfs';
+
+const removedDefaultPdfIdsSet = new Set<string>(REMOVED_DEFAULT_PDF_IDS);
 
 const DB_NAME = 'shelo_nabel_pdf_files_db';
 const STORE_NAME = 'pdf_blobs';
@@ -280,6 +283,7 @@ export const pdfFileStore = {
     const serverSet = new Set(serverStoredPdfIds);
     const localFiles = await getAllLocalFilesFromIdb();
     for (const item of localFiles) {
+      if (removedDefaultPdfIdsSet.has(item.id)) continue;
       if (!serverSet.has(item.id)) {
         await uploadBlobToServer(item.id, item.blob);
       }

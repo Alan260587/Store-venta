@@ -16,7 +16,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { INITIAL_PRODUCTS } from './src/data/initialProducts.ts';
-import { INITIAL_PDFS, PROTECTED_DEFAULT_PDF_IDS } from './src/data/initialPdfs.ts';
+import { INITIAL_PDFS, PROTECTED_DEFAULT_PDF_IDS, REMOVED_DEFAULT_PDF_IDS } from './src/data/initialPdfs.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -186,9 +186,8 @@ function mergePdfsList(
   incomingList: any[],
   deletedIds: string[]
 ): { merged: any[]; changed: boolean } {
-  // Never allow the 17 core default PDFs to be deleted
   const deletedSet = new Set(
-    deletedIds.filter((id) => !protectedPdfIdsSet.has(id))
+    [...REMOVED_DEFAULT_PDF_IDS, ...deletedIds].filter((id) => !protectedPdfIdsSet.has(id))
   );
   const map = new Map<string, any>();
   let changed = false;
@@ -288,10 +287,17 @@ function loadStore() {
     if (fs.existsSync(STORE_FILE)) {
       const raw = fs.readFileSync(STORE_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      const deletedProductIds = Array.isArray(parsed.deletedProductIds) ? parsed.deletedProductIds : [];
-      const deletedPdfIds = Array.isArray(parsed.deletedPdfIds)
-        ? parsed.deletedPdfIds.filter((id: string) => !protectedPdfIdsSet.has(id))
-        : [];
+      const deletedProductIds: string[] = Array.from(
+        new Set<string>(Array.isArray(parsed.deletedProductIds) ? parsed.deletedProductIds : [])
+      );
+      const deletedPdfIds: string[] = Array.from(
+        new Set<string>(
+          [
+            ...REMOVED_DEFAULT_PDF_IDS,
+            ...(Array.isArray(parsed.deletedPdfIds) ? parsed.deletedPdfIds : [])
+          ].filter((id: string) => !protectedPdfIdsSet.has(id))
+        )
+      );
       const rawProducts = Array.isArray(parsed.products) ? parsed.products : [];
       const rawPdfs = Array.isArray(parsed.pdfs) ? parsed.pdfs : [];
 
@@ -304,7 +310,7 @@ function loadStore() {
         deletedProductIds,
         deletedPdfIds
       };
-      if (prodChanged || pdfChanged) {
+      if (prodChanged || pdfChanged || (parsed.deletedPdfIds?.length ?? 0) !== deletedPdfIds.length) {
         saveStore(loaded);
       }
       return loaded;
@@ -316,7 +322,7 @@ function loadStore() {
     products: [...INITIAL_PRODUCTS],
     pdfs: [...INITIAL_PDFS],
     deletedProductIds: [] as string[],
-    deletedPdfIds: [] as string[]
+    deletedPdfIds: [...REMOVED_DEFAULT_PDF_IDS]
   };
   saveStore(initialStore);
   return initialStore;
@@ -1003,9 +1009,9 @@ async function startServer() {
     const { products, pdfs } = req.body || {};
     serverStore = {
       products: Array.isArray(products) && products.length > 0 ? products : [...INITIAL_PRODUCTS],
-      pdfs: Array.isArray(pdfs) && pdfs.length > 0 ? pdfs : [...INITIAL_PDFS],
+      pdfs: Array.isArray(pdfs) ? pdfs : [...INITIAL_PDFS],
       deletedProductIds: [],
-      deletedPdfIds: []
+      deletedPdfIds: [...REMOVED_DEFAULT_PDF_IDS]
     };
     saveStore(serverStore);
     broadcastState();
@@ -1014,7 +1020,7 @@ async function startServer() {
       products: serverStore.products,
       pdfs: serverStore.pdfs,
       deletedProductIds: [],
-      deletedPdfIds: []
+      deletedPdfIds: serverStore.deletedPdfIds
     });
   });
 
