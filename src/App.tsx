@@ -281,27 +281,33 @@ export default function App() {
     setCartItems([]);
   };
 
-  // Product Operations (Immediately updates the page state)
+  // Product Operations (Immediately updates the page state, Cloud Server, and Firebase)
   const handleAddProduct = (productData: Omit<Product, 'id'>) => {
     const created = dbStorage.addProduct(productData);
-    refreshPageData(`¡Página actualizada! Producto "${created.name}" guardado y visible en el catálogo.`);
+    refreshPageData(
+      `¡Guardado automático! Producto "${created.name}" subido a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet).`
+    );
   };
 
   const handleUpdateProduct = (product: Product) => {
     dbStorage.updateProduct(product);
-    refreshPageData(`¡Página actualizada! Se guardaron los cambios en "${product.name}".`);
+    refreshPageData(
+      `¡Guardado automático! Cambios en "${product.name}" subidos a la Página, a Firebase y a la Nube.`
+    );
   };
 
   const handleDeleteProduct = (id: string) => {
     dbStorage.deleteProduct(id);
-    refreshPageData('¡Página actualizada! Producto eliminado del catálogo.');
+    refreshPageData('¡Producto eliminado automáticamente de la Página, Firebase y la Nube!');
   };
 
-  // PDF Operations (Immediately updates the page state)
+  // PDF Operations (Immediately updates the page state, Cloud Server, and Firebase on Guardar)
   const handleAddPdf = (pdfData: Omit<PdfDocument, 'id' | 'uploadedAt'>) => {
     const result = dbStorage.addPdf(pdfData);
     if (result.success) {
-      refreshPageData(`¡Página actualizada! PDF "${result.pdf?.title || pdfData.title}" guardado en la página.`);
+      refreshPageData(
+        `¡Guardado automático! PDF "${result.pdf?.title || pdfData.title}" subido a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet).`
+      );
     }
     return result;
   };
@@ -311,8 +317,8 @@ export default function App() {
     if (result.success) {
       refreshPageData(
         result.addedPdfs.length === 1
-          ? `¡Página actualizada! PDF "${result.addedPdfs[0].title}" guardado en la página.`
-          : `¡Página actualizada! Se guardaron ${result.addedPdfs.length} PDFs en la página.`
+          ? `¡Guardado automático! PDF "${result.addedPdfs[0].title}" subido a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet).`
+          : `¡Guardado automático! Se subieron ${result.addedPdfs.length} PDFs a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet).`
       );
     }
     return result;
@@ -320,13 +326,15 @@ export default function App() {
 
   const handleUpdatePdf = (pdf: PdfDocument) => {
     dbStorage.updatePdf(pdf);
-    refreshPageData(`¡Página actualizada! Cambios guardados en el PDF "${pdf.title}".`);
+    refreshPageData(
+      `¡Guardado automático! Cambios en el PDF "${pdf.title}" subidos a la Página, a Firebase y a la Nube.`
+    );
   };
 
   const handleDeletePdf = (id: string) => {
     dbStorage.deletePdf(id);
     void pdfFileStore.deleteFile(id);
-    refreshPageData('¡Página actualizada! PDF eliminado.');
+    refreshPageData('¡PDF eliminado automáticamente de la Página, Firebase y la Nube!');
   };
 
   const handleResetDefaults = () => {
@@ -365,7 +373,7 @@ export default function App() {
             <ShieldCheck className="w-4 h-4 text-slate-950 shrink-0" />
             <span>Sesión de Administrador Activa (Clave ****)</span>
             <span className="hidden md:inline font-normal text-slate-900">
-              — Descarga libre sin clave en todos los PDFs ($20 y Gratis). Al guardar un producto o PDF la página se actualiza al instante.
+              — Al darle "Guardar" a tus PDFs o productos, se suben automáticamente a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet).
             </span>
           </div>
 
@@ -374,19 +382,6 @@ export default function App() {
               <Users className="w-3 h-3" />
               <span>{presence.totalOnline} {presence.totalOnline === 1 ? 'usuario' : 'usuarios'} en línea</span>
             </span>
-
-            <button
-              type="button"
-              onClick={() => {
-                void performCrossDeviceSync();
-                refreshPageData('¡Página sincronizada entre Laptop, Celular e iOS al instante!');
-              }}
-              className="px-2 py-0.5 bg-white/80 hover:bg-white text-slate-950 rounded-md text-[11px] font-bold flex items-center gap-1"
-              title="Sincronizar y actualizar vista entre todos tus aparatos"
-            >
-              <RefreshCw className="w-3 h-3" />
-              <span className="hidden sm:inline">Sincronizar</span>
-            </button>
 
             {activeTab !== 'admin' && (
               <button
@@ -427,10 +422,6 @@ export default function App() {
         presence={presence}
         totalProductsCount={products.length}
         totalPdfsCount={pdfs.length}
-        onSyncAllDevices={async () => {
-          await performCrossDeviceSync();
-          refreshPageData('¡Todo sincronizado! Viendo todos los productos y PDFs de Laptop, Celular e iOS en esta misma página.');
-        }}
       />
 
       {/* Main View Content */}

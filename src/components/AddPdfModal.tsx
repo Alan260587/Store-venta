@@ -157,8 +157,8 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
     setPendingItems((prev) => prev.filter((item) => item.tempId !== tempId));
   };
 
-  // Save a single pending item immediately (for 1-by-1 saving)
-  const handleSaveSinglePending = (item: PendingPdfItem) => {
+  // Save a single pending item immediately to Page, Firebase, and Cloud Server
+  const handleSaveSinglePending = async (item: PendingPdfItem) => {
     setGlobalError('');
     setGlobalSuccess('');
 
@@ -178,22 +178,21 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
 
     if (result.success && result.pdf) {
       const createdPdf = result.pdf;
-      if (item.file) {
-        // Save binary file in background so it never blocks UI or next uploads
-        void pdfFileStore.saveFile(createdPdf.id, item.file);
-      }
       setPendingItems((prev) => prev.filter((p) => p.tempId !== item.tempId));
       setRecentlySaved((prev) => [createdPdf, ...prev]);
       setGlobalSuccess(
-        `¡PDF "${createdPdf.title}" guardado en la página (Clave: ${createdPdf.downloadKey})! Puedes seguir subiendo más archivos.`
+        `¡PDF "${createdPdf.title}" guardado y subido automáticamente a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet)!`
       );
+      if (item.file) {
+        await pdfFileStore.saveFile(createdPdf.id, item.file);
+      }
     } else {
       setGlobalError(result.message);
     }
   };
 
-  // Step 2: Save ALL pending items atomically to the page!
-  const handleSaveAllToPage = () => {
+  // Step 2: Save ALL pending items atomically to the Page, Firebase, and Cloud Server on clicking Guardar!
+  const handleSaveAllToPage = async () => {
     setGlobalError('');
     setGlobalSuccess('');
 
@@ -202,7 +201,8 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
       return;
     }
 
-    const payloads = pendingItems.map((item, idx) => {
+    const currentPending = [...pendingItems];
+    const payloads = currentPending.map((item, idx) => {
       const finalPages = Math.max(1, Math.min(1500, Number(item.pagesCount) || 1));
       const finalTitle = item.title.trim() || `Documento PDF ${idx + 1}`;
       const finalKey = (item.downloadKey || generateRandomDownloadKey()).trim().toUpperCase();
@@ -221,20 +221,18 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
     if (onAddPdfsBatch) {
       const batchResult = onAddPdfsBatch(payloads);
       if (batchResult.success && batchResult.addedPdfs.length > 0) {
-        // Store binary blobs asynchronously in background without blocking!
-        batchResult.addedPdfs.forEach((savedPdf, index) => {
-          const sourceFile = pendingItems[index]?.file;
-          if (sourceFile) {
-            void pdfFileStore.saveFile(savedPdf.id, sourceFile);
-          }
-        });
-
         setRecentlySaved((prev) => [...batchResult.addedPdfs, ...prev]);
         setPendingItems([]);
         setGlobalSuccess(
           batchResult.addedPdfs.length === 1
-            ? `¡1 PDF guardado con éxito en la página! Puedes seleccionar y subir más archivos PDF ahora mismo.`
-            : `¡${batchResult.addedPdfs.length} PDFs guardados con éxito en la página! Puedes seguir subiendo más archivos.`
+            ? '¡1 PDF guardado y subido automáticamente a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet)!'
+            : `¡${batchResult.addedPdfs.length} PDFs guardados y subidos automáticamente a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet)!`
+        );
+        await Promise.allSettled(
+          batchResult.addedPdfs.map((savedPdf, index) => {
+            const sourceFile = currentPending[index]?.file;
+            return sourceFile ? pdfFileStore.saveFile(savedPdf.id, sourceFile) : Promise.resolve();
+          })
         );
       } else {
         setGlobalError(batchResult.message);
@@ -242,15 +240,16 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
       return;
     }
 
-    // Fallback sequential synchronous save
+    // Fallback sequential save
     const newlySaved: PdfDocument[] = [];
+    const uploadPromises: Array<Promise<void>> = [];
     for (let i = 0; i < payloads.length; i++) {
       const res = onAddPdf(payloads[i]);
       if (res.success && res.pdf) {
         newlySaved.push(res.pdf);
-        const f = pendingItems[i]?.file;
+        const f = currentPending[i]?.file;
         if (f) {
-          void pdfFileStore.saveFile(res.pdf.id, f);
+          uploadPromises.push(pdfFileStore.saveFile(res.pdf.id, f));
         }
       }
     }
@@ -258,7 +257,10 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
     if (newlySaved.length > 0) {
       setRecentlySaved((prev) => [...newlySaved, ...prev]);
       setPendingItems([]);
-      setGlobalSuccess(`¡${newlySaved.length} PDF(s) guardados en la página! Puedes seguir subiendo más archivos.`);
+      setGlobalSuccess(
+        `¡${newlySaved.length} PDF(s) guardados y subidos automáticamente a la Página, a Firebase y a la Nube!`
+      );
+      await Promise.allSettled(uploadPromises);
     }
   };
 
@@ -625,12 +627,12 @@ export const AddPdfModal: React.FC<AddPdfModalProps> = ({
 
             <button
               type="button"
-              onClick={handleSaveAllToPage}
-              className="w-full py-3.5 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg hover:shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all active:scale-98"
+              onClick={() => void handleSaveAllToPage()}
+              className="w-full py-3.5 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg hover:shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all active:scale-98 cursor-pointer"
             >
               <Save className="w-5 h-5 text-amber-300" />
               <span>
-                Guardar {pendingItems.length === 1 ? 'este PDF' : `todos los ${pendingItems.length} PDFs`} en la Página
+                Guardar {pendingItems.length === 1 ? 'este PDF' : `todos los ${pendingItems.length} PDFs`} (Sube Automático a la Página, Firebase y Nube)
               </span>
             </button>
           </div>

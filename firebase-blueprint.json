@@ -2,7 +2,7 @@
   "entities": {
     "Product": {
       "title": "Product",
-      "description": "Catalog product in Shelo NABEL store synchronized across Laptop, Android, and iOS",
+      "description": "Catalog product in Shelo NABEL store automatically saved to Firebase and cloud across Laptop, Android, iOS, and Tablet",
       "type": "object",
       "properties": {
         "id": {
@@ -62,7 +62,13 @@
         "authorUid": {
           "type": "string",
           "maxLength": 128,
-          "description": "UID of the user who synced or created the product"
+          "description": "UID or session identifier of the device that saved the product"
+        },
+        "adminKey": {
+          "type": "string",
+          "enum": ["1987", "2026"],
+          "maxLength": 10,
+          "description": "Unified admin authorization key across Laptop, Android, iOS, and Tablet"
         },
         "updatedAtMs": {
           "type": "number",
@@ -90,6 +96,7 @@
         "image",
         "visibility",
         "authorUid",
+        "adminKey",
         "updatedAtMs",
         "createdAt",
         "updatedAt"
@@ -97,7 +104,7 @@
     },
     "PdfDocument": {
       "title": "PdfDocument",
-      "description": "Downloadable PDF catalog or book in Shelo NABEL store synchronized across Laptop, Android, and iOS",
+      "description": "Downloadable PDF catalog or book in Shelo NABEL store automatically saved to Firebase and cloud across Laptop, Android, iOS, and Tablet",
       "type": "object",
       "properties": {
         "id": {
@@ -153,7 +160,13 @@
         "authorUid": {
           "type": "string",
           "maxLength": 128,
-          "description": "UID of the user who synced or uploaded the PDF"
+          "description": "UID or session identifier of the device that saved the PDF"
+        },
+        "adminKey": {
+          "type": "string",
+          "enum": ["1987", "2026"],
+          "maxLength": 10,
+          "description": "Unified admin authorization key across Laptop, Android, iOS, and Tablet"
         },
         "updatedAtMs": {
           "type": "number",
@@ -182,7 +195,79 @@
         "category",
         "visibility",
         "authorUid",
+        "adminKey",
         "updatedAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PdfChunk": {
+      "title": "PdfChunk",
+      "description": "Base64 binary chunk of an uploaded PDF file stored in Firebase Cloud so any device can download the exact PDF file",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique chunk ID ({pdfId}_chunk_{chunkIndex})"
+        },
+        "pdfId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent PDF document ID"
+        },
+        "chunkIndex": {
+          "type": "number",
+          "description": "Zero-based index of this chunk"
+        },
+        "totalChunks": {
+          "type": "number",
+          "description": "Total number of chunks for this PDF"
+        },
+        "data": {
+          "type": "string",
+          "maxLength": 800000,
+          "description": "Base64 encoded binary slice of the PDF"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "maxLength": 20,
+          "description": "Visibility scope"
+        },
+        "authorUid": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Device or user identifier"
+        },
+        "adminKey": {
+          "type": "string",
+          "enum": ["1987", "2026"],
+          "maxLength": 10,
+          "description": "Unified admin authorization key"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "pdfId",
+        "chunkIndex",
+        "totalChunks",
+        "data",
+        "visibility",
+        "authorUid",
+        "adminKey",
         "createdAt",
         "updatedAt"
       ]
@@ -213,7 +298,13 @@
         "authorUid": {
           "type": "string",
           "maxLength": 128,
-          "description": "UID of the admin who deleted the item"
+          "description": "UID or session identifier of the admin who deleted the item"
+        },
+        "adminKey": {
+          "type": "string",
+          "enum": ["1987", "2026"],
+          "maxLength": 10,
+          "description": "Unified admin authorization key"
         },
         "createdAt": {
           "type": "string",
@@ -231,6 +322,7 @@
         "itemType",
         "visibility",
         "authorUid",
+        "adminKey",
         "createdAt",
         "updatedAt"
       ]
@@ -269,11 +361,15 @@
   "firestore": {
     "/products/{productId}": {
       "schema": "Product",
-      "description": "Synchronized store products across Laptop, Android, and iOS"
+      "description": "Synchronized store products across Laptop, Android, iOS, and Tablet"
     },
     "/pdfs/{pdfId}": {
       "schema": "PdfDocument",
-      "description": "Synchronized PDF catalogs and books across Laptop, Android, and iOS"
+      "description": "Synchronized PDF catalogs and books across Laptop, Android, iOS, and Tablet"
+    },
+    "/pdfChunks/{chunkId}": {
+      "schema": "PdfChunk",
+      "description": "Synchronized PDF binary file chunks across Laptop, Android, iOS, and Tablet"
     },
     "/deletedItems/{itemId}": {
       "schema": "DeletedRecord",

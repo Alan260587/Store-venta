@@ -261,38 +261,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     );
   };
 
-  // Save a single staged PDF immediately
-  const handleSaveSingleStaged = (item: StagedInlinePdf) => {
+  // Save a single staged PDF immediately to Page, Firebase, and Cloud Server
+  const handleSaveSingleStaged = async (item: StagedInlinePdf) => {
     if (!onAddPdfDirect) return;
-    const finalTitle = item.title.trim() || 'Documento PDF';
-    const finalKey = (item.downloadKey || generateRandomDownloadKey()).trim().toUpperCase();
-
-    const res = onAddPdfDirect({
-      title: finalTitle,
-      description: `Documento PDF (${item.pagesCount} páginas detectadas automáticamente).`,
-      pagesCount: item.pagesCount,
-      price: Number(item.price) === 0 ? 0 : 20,
-      downloadKey: finalKey,
-      fileSize: item.fileSizeFormatted,
-      category: 'Catálogo Oficial'
-    });
-
-    if (res.success && res.pdf) {
-      const createdPdf = res.pdf;
-      void pdfFileStore.saveFile(createdPdf.id, item.file);
-      setStagedPdfs((prev) => prev.filter((p) => p.tempId !== item.tempId));
-      setInlineUploadMsg(`¡PDF "${createdPdf.title}" guardado en la página (Clave: ${createdPdf.downloadKey})!`);
-    }
-  };
-
-  // Step 2: Save all staged PDFs atomically to the page
-  const handleSaveStagedPdfs = () => {
-    if (stagedPdfs.length === 0) return;
-
-    const payloads = stagedPdfs.map((item, idx) => {
-      const finalTitle = item.title.trim() || `Documento PDF ${idx + 1}`;
+    setIsSyncingCloud(true);
+    try {
+      const finalTitle = item.title.trim() || 'Documento PDF';
       const finalKey = (item.downloadKey || generateRandomDownloadKey()).trim().toUpperCase();
-      return {
+
+      const res = onAddPdfDirect({
         title: finalTitle,
         description: `Documento PDF (${item.pagesCount} páginas detectadas automáticamente).`,
         pagesCount: item.pagesCount,
@@ -300,41 +277,81 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         downloadKey: finalKey,
         fileSize: item.fileSizeFormatted,
         category: 'Catálogo Oficial'
-      };
-    });
+      });
 
-    if (onAddPdfsBatch) {
-      const batchRes = onAddPdfsBatch(payloads);
-      if (batchRes.success && batchRes.addedPdfs.length > 0) {
-        batchRes.addedPdfs.forEach((savedPdf, index) => {
-          const sourceFile = stagedPdfs[index]?.file;
-          if (sourceFile) {
-            void pdfFileStore.saveFile(savedPdf.id, sourceFile);
-          }
-        });
-        const count = batchRes.addedPdfs.length;
-        setStagedPdfs([]);
+      if (res.success && res.pdf) {
+        const createdPdf = res.pdf;
+        setStagedPdfs((prev) => prev.filter((p) => p.tempId !== item.tempId));
         setInlineUploadMsg(
-          count === 1
-            ? '¡1 PDF guardado con su título y clave de descarga en la página! Puedes subir más archivos.'
-            : `¡Se guardaron los ${count} archivos PDF con sus títulos y claves en la página!`
+          `¡PDF "${createdPdf.title}" guardado y subido automáticamente a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet)!`
+        );
+        await pdfFileStore.saveFile(createdPdf.id, item.file);
+      }
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
+  // Step 2: Save all staged PDFs atomically to the Page, Firebase, and Cloud Server on clicking Guardar
+  const handleSaveStagedPdfs = async () => {
+    if (stagedPdfs.length === 0) return;
+    setIsSyncingCloud(true);
+
+    try {
+      const currentStaged = [...stagedPdfs];
+      const payloads = currentStaged.map((item, idx) => {
+        const finalTitle = item.title.trim() || `Documento PDF ${idx + 1}`;
+        const finalKey = (item.downloadKey || generateRandomDownloadKey()).trim().toUpperCase();
+        return {
+          title: finalTitle,
+          description: `Documento PDF (${item.pagesCount} páginas detectadas automáticamente).`,
+          pagesCount: item.pagesCount,
+          price: Number(item.price) === 0 ? 0 : 20,
+          downloadKey: finalKey,
+          fileSize: item.fileSizeFormatted,
+          category: 'Catálogo Oficial'
+        };
+      });
+
+      if (onAddPdfsBatch) {
+        const batchRes = onAddPdfsBatch(payloads);
+        if (batchRes.success && batchRes.addedPdfs.length > 0) {
+          const count = batchRes.addedPdfs.length;
+          setStagedPdfs([]);
+          setInlineUploadMsg(
+            count === 1
+              ? '¡1 PDF guardado y subido automáticamente a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet)!'
+              : `¡Se guardaron y subieron automáticamente los ${count} archivos PDF a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet)!`
+          );
+          await Promise.allSettled(
+            batchRes.addedPdfs.map((savedPdf, index) => {
+              const sourceFile = currentStaged[index]?.file;
+              return sourceFile ? pdfFileStore.saveFile(savedPdf.id, sourceFile) : Promise.resolve();
+            })
+          );
+        }
+        return;
+      }
+
+      if (!onAddPdfDirect) return;
+      let savedCount = 0;
+      const uploadPromises: Array<Promise<void>> = [];
+      for (let i = 0; i < payloads.length; i++) {
+        const res = onAddPdfDirect(payloads[i]);
+        if (res.success && res.pdf) {
+          uploadPromises.push(pdfFileStore.saveFile(res.pdf.id, currentStaged[i].file));
+          savedCount++;
+        }
+      }
+      setStagedPdfs([]);
+      if (savedCount > 0) {
+        setInlineUploadMsg(
+          `¡Se guardaron y subieron automáticamente ${savedCount} PDF(s) a la Página, a Firebase y a la Nube!`
         );
       }
-      return;
-    }
-
-    if (!onAddPdfDirect) return;
-    let savedCount = 0;
-    for (let i = 0; i < payloads.length; i++) {
-      const res = onAddPdfDirect(payloads[i]);
-      if (res.success && res.pdf) {
-        void pdfFileStore.saveFile(res.pdf.id, stagedPdfs[i].file);
-        savedCount++;
-      }
-    }
-    setStagedPdfs([]);
-    if (savedCount > 0) {
-      setInlineUploadMsg(`¡Se guardaron ${savedCount} PDF(s) en la página!`);
+      await Promise.allSettled(uploadPromises);
+    } finally {
+      setIsSyncingCloud(false);
     }
   };
 
@@ -352,27 +369,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       });
     }
     setEditingProductId(null);
-  };
-
-  const handleSyncAllDevicesNow = async () => {
-    setIsSyncingCloud(true);
-    try {
-      await dbStorage.syncWithServer();
-      if (!auth.currentUser) {
-        const user = await signInWithGoogleCloud();
-        if (user) {
-          await dbStorage.syncAllToFirestoreCloud();
-        }
-      } else {
-        await dbStorage.syncAllToFirestoreCloud();
-      }
-      setInlineUploadMsg(
-        '¡Sincronización completa! Todos los productos y PDFs de tu Laptop, Celular Android e iOS están unificados en esta misma página y en Firebase.'
-      );
-      setTimeout(() => setInlineUploadMsg(''), 5000);
-    } finally {
-      setIsSyncingCloud(false);
-    }
   };
 
   return (
@@ -393,25 +389,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/30">
                 Multiusuario: {presence?.totalOnline || 1} en línea ({presence?.clientsOnline ?? 0} clientes normales)
               </span>
+              <span className="bg-cyan-500/20 text-cyan-300 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-cyan-500/30 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                <span>Subida Automática a Firebase y Nube al Guardar</span>
+              </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Sube de 1 a 10 PDFs a la vez, <strong>modifica sus títulos al guardar</strong>, consulta las <strong>Claves de Descarga</strong> y descarga el <strong>Instructivo en PDF</strong>. Todo se sincroniza en la misma página (Laptop, Celular e iOS) y tu sesión se cierra automáticamente al cerrar la página.
+              Sube de 1 a 10 PDFs a la vez desde tu <strong>Laptop, Móvil Android, iOS o Tablet</strong>. Al darle <strong>"Guardar"</strong>, todo se sube automáticamente a la página, a Firebase y a la nube sin necesidad de sincronizar.
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-          <button
-            type="button"
-            onClick={() => void handleSyncAllDevicesNow()}
-            disabled={isSyncingCloud}
-            className="px-3.5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-            title="Sincronizar todos los productos y PDFs de Laptop, Celular e iOS en la misma página y en Firebase"
-          >
-            <RefreshCw className={`w-4 h-4 ${isSyncingCloud ? 'animate-spin' : ''}`} />
-            <span>{isSyncingCloud ? 'Sincronizando...' : 'Sincronizar Nube (Laptop/Celular/iOS)'}</span>
-          </button>
-
           <button
             type="button"
             onClick={() => setActiveTab('manual')}
@@ -676,12 +665,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
             <button
               type="button"
-              onClick={handleSaveStagedPdfs}
-              className="w-full py-3.5 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition-all"
+              onClick={() => void handleSaveStagedPdfs()}
+              disabled={isSyncingCloud}
+              className="w-full py-3.5 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
-              <Save className="w-5 h-5 text-amber-300" />
+              {isSyncingCloud ? (
+                <Loader2 className="w-5 h-5 animate-spin text-amber-300" />
+              ) : (
+                <Save className="w-5 h-5 text-amber-300" />
+              )}
               <span>
-                Guardar {stagedPdfs.length === 1 ? 'este PDF' : `todos los ${stagedPdfs.length} PDFs`} con sus Títulos en la Página
+                {isSyncingCloud
+                  ? 'Subiendo automáticamente a la Página, Firebase y Nube...'
+                  : `Guardar ${stagedPdfs.length === 1 ? 'este PDF' : `todos los ${stagedPdfs.length} PDFs`} (Sube Automático a la Página, Firebase y Nube)`}
               </span>
             </button>
           </div>

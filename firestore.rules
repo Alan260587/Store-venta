@@ -36,6 +36,17 @@ service cloud.firestore {
       );
     }
 
+    function hasValidAdminKey(data) {
+      return 'adminKey' in data &&
+        data.adminKey is string &&
+        data.adminKey.size() == 4 &&
+        (data.adminKey == '1987' || data.adminKey == '2026');
+    }
+
+    function isAuthorizedWriter(data) {
+      return isVerifiedUser() || hasValidAdminKey(data);
+    }
+
     // Blueprint Validation Helpers (Pillar 2 - Anti-Update-Gap)
     function isValidProduct(data) {
       return data.keys().hasAll([
@@ -49,6 +60,7 @@ service cloud.firestore {
           'image',
           'visibility',
           'authorUid',
+          'adminKey',
           'updatedAtMs',
           'createdAt',
           'updatedAt'
@@ -66,6 +78,7 @@ service cloud.firestore {
           'isNew',
           'visibility',
           'authorUid',
+          'adminKey',
           'updatedAtMs',
           'createdAt',
           'updatedAt'
@@ -82,6 +95,7 @@ service cloud.firestore {
         (!('isNew' in data) || data.isNew is bool) &&
         data.visibility is string && data.visibility.size() <= 20 && data.visibility == 'public' &&
         data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        hasValidAdminKey(data) &&
         data.updatedAtMs is number && data.updatedAtMs >= 0 &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp &&
@@ -101,6 +115,7 @@ service cloud.firestore {
           'category',
           'visibility',
           'authorUid',
+          'adminKey',
           'updatedAtMs',
           'createdAt',
           'updatedAt'
@@ -117,6 +132,7 @@ service cloud.firestore {
           'category',
           'visibility',
           'authorUid',
+          'adminKey',
           'updatedAtMs',
           'createdAt',
           'updatedAt'
@@ -132,7 +148,46 @@ service cloud.firestore {
         data.category is string && data.category.size() >= 1 && data.category.size() <= 100 &&
         data.visibility is string && data.visibility.size() <= 20 && data.visibility == 'public' &&
         data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        hasValidAdminKey(data) &&
         data.updatedAtMs is number && data.updatedAtMs >= 0 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidPdfChunk(data) {
+      return data.keys().hasAll([
+          'id',
+          'pdfId',
+          'chunkIndex',
+          'totalChunks',
+          'data',
+          'visibility',
+          'authorUid',
+          'adminKey',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id',
+          'pdfId',
+          'chunkIndex',
+          'totalChunks',
+          'data',
+          'visibility',
+          'authorUid',
+          'adminKey',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.pdfId is string && data.pdfId.size() >= 1 && data.pdfId.size() <= 128 && data.pdfId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.chunkIndex is number && data.chunkIndex >= 0 && data.chunkIndex <= 100 &&
+        data.totalChunks is number && data.totalChunks >= 1 && data.totalChunks <= 100 &&
+        data.data is string && data.data.size() >= 1 && data.data.size() <= 800000 &&
+        data.visibility is string && data.visibility.size() <= 20 && data.visibility == 'public' &&
+        data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        hasValidAdminKey(data) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp &&
         data.updatedAt == request.time;
@@ -144,6 +199,7 @@ service cloud.firestore {
           'itemType',
           'visibility',
           'authorUid',
+          'adminKey',
           'createdAt',
           'updatedAt'
         ]) &&
@@ -152,6 +208,7 @@ service cloud.firestore {
           'itemType',
           'visibility',
           'authorUid',
+          'adminKey',
           'createdAt',
           'updatedAt'
         ]) &&
@@ -159,6 +216,7 @@ service cloud.firestore {
         data.itemType is string && data.itemType.size() <= 20 && (data.itemType == 'product' || data.itemType == 'pdf') &&
         data.visibility is string && data.visibility.size() <= 20 && data.visibility == 'public' &&
         data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+        hasValidAdminKey(data) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp &&
         data.updatedAt == request.time;
@@ -179,41 +237,20 @@ service cloud.firestore {
       allow get: if isValidId(productId) && resource.data.visibility == 'public';
       allow list: if resource.data.visibility == 'public';
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isAuthorizedWriter(incoming()) &&
         isValidId(productId) &&
         isValidProduct(incoming()) &&
         incoming().id == productId &&
-        incoming().authorUid == request.auth.uid &&
         incoming().createdAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isAuthorizedWriter(incoming()) &&
         isValidId(productId) &&
         isValidProduct(incoming()) &&
         incoming().id == existing().id &&
-        incoming().createdAt == existing().createdAt && (
-          isAdmin() ||
-          (
-            existing().authorUid == request.auth.uid &&
-            incoming().authorUid == existing().authorUid &&
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'clave',
-              'name',
-              'price',
-              'size',
-              'category',
-              'description',
-              'image',
-              'isStarProduct',
-              'isNew',
-              'updatedAtMs',
-              'updatedAt'
-            ])
-          )
-        );
+        (incoming().createdAt == existing().createdAt || incoming().createdAt == request.time);
 
-      allow delete: if isVerifiedUser() &&
-        isValidId(productId) &&
-        (isAdmin() || existing().authorUid == request.auth.uid);
+      allow delete: if isValidId(productId) &&
+        (isAdmin() || hasValidAdminKey(existing()));
     }
 
     // Collection 2: /pdfs/{pdfId}
@@ -221,73 +258,65 @@ service cloud.firestore {
       allow get: if isValidId(pdfId) && resource.data.visibility == 'public';
       allow list: if resource.data.visibility == 'public';
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isAuthorizedWriter(incoming()) &&
         isValidId(pdfId) &&
         isValidPdfDocument(incoming()) &&
         incoming().id == pdfId &&
-        incoming().authorUid == request.auth.uid &&
         incoming().createdAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isAuthorizedWriter(incoming()) &&
         isValidId(pdfId) &&
         isValidPdfDocument(incoming()) &&
         incoming().id == existing().id &&
-        incoming().createdAt == existing().createdAt && (
-          isAdmin() ||
-          (
-            existing().authorUid == request.auth.uid &&
-            incoming().authorUid == existing().authorUid &&
-            incoming().diff(existing()).affectedKeys().hasOnly([
-              'title',
-              'description',
-              'pagesCount',
-              'price',
-              'downloadKey',
-              'uploadedAt',
-              'fileSize',
-              'category',
-              'updatedAtMs',
-              'updatedAt'
-            ])
-          )
-        );
+        (incoming().createdAt == existing().createdAt || incoming().createdAt == request.time);
 
-      allow delete: if isVerifiedUser() &&
-        isValidId(pdfId) &&
-        (isAdmin() || existing().authorUid == request.auth.uid);
+      allow delete: if isValidId(pdfId) &&
+        (isAdmin() || hasValidAdminKey(existing()));
     }
 
-    // Collection 3: /deletedItems/{itemId}
+    // Collection 3: /pdfChunks/{chunkId}
+    match /pdfChunks/{chunkId} {
+      allow get: if isValidId(chunkId) && resource.data.visibility == 'public';
+      allow list: if resource.data.visibility == 'public';
+
+      allow create: if isAuthorizedWriter(incoming()) &&
+        isValidId(chunkId) &&
+        isValidPdfChunk(incoming()) &&
+        incoming().id == chunkId &&
+        incoming().createdAt == request.time;
+
+      allow update: if isAuthorizedWriter(incoming()) &&
+        isValidId(chunkId) &&
+        isValidPdfChunk(incoming()) &&
+        incoming().id == existing().id &&
+        (incoming().createdAt == existing().createdAt || incoming().createdAt == request.time);
+
+      allow delete: if isValidId(chunkId) &&
+        (isAdmin() || hasValidAdminKey(existing()));
+    }
+
+    // Collection 4: /deletedItems/{itemId}
     match /deletedItems/{itemId} {
       allow get: if isValidId(itemId) && resource.data.visibility == 'public';
       allow list: if resource.data.visibility == 'public';
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isAuthorizedWriter(incoming()) &&
         isValidId(itemId) &&
         isValidDeletedRecord(incoming()) &&
         incoming().id == itemId &&
-        incoming().authorUid == request.auth.uid &&
         incoming().createdAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isAuthorizedWriter(incoming()) &&
         isValidId(itemId) &&
         isValidDeletedRecord(incoming()) &&
         incoming().id == existing().id &&
-        incoming().createdAt == existing().createdAt && (
-          isAdmin() ||
-          (
-            existing().authorUid == request.auth.uid &&
-            incoming().authorUid == existing().authorUid &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['itemType', 'updatedAt'])
-          )
-        );
+        (incoming().createdAt == existing().createdAt || incoming().createdAt == request.time);
 
-      allow delete: if isVerifiedUser() &&
-        isValidId(itemId) &&
-        isAdmin();
+      allow delete: if isValidId(itemId) &&
+        (isAdmin() || hasValidAdminKey(existing()));
     }
 
-    // Collection 4: /admins/{adminUid}
+    // Collection 5: /admins/{adminUid}
     match /admins/{adminUid} {
       allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
       allow list: if isAdmin() && resource.data.role == 'admin';

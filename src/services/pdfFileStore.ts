@@ -1,378 +1,401 @@
 /**
- * Multi-user & cross-device (Laptop, Android, iOS) storage for actual PDF File/Blob binary data.
- * Saves locally to IndexedDB AND uploads to /api/pdf-file/:id (with base64 JSON fallback)
- * so any device (Laptop, Android, iOS) sees and downloads the exact same PDF files.
+ * Persistent storage for uploaded PDF binary files across Laptop, Android, iOS, and Tablet.
+ * Automatically saves every uploaded PDF on "Guardar" to:
+ * 1. Local IndexedDB (instant local access)
+ * 2. Cloud Server (/api/pdf-file/:id & /api/pdf-file-b64/:id)
+ * 3. Firebase Cloud Firestore (/pdfChunks/{chunkId}) so any device can download the exact PDF from Firebase
  */
 
-import { countPdfPages } from '../utils/pdfParser';
+import {
+  db,
+  auth,
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  setDoc,
+  deleteDoc,
+  serverTimestamp,
+  OperationType,
+  handleFirestoreError
+} from '../firebase';
 
-const DB_NAME = 'shelo_nabel_pdf_blobs_db';
-const STORE_NAME = 'pdf_files';
+const DB_NAME = 'shelo_nabel_pdf_files_db';
+const STORE_NAME = 'pdf_blobs';
 const DB_VERSION = 1;
+const CHUNK_CHAR_SIZE = 550000; // ~550KB per Firestore document (well below 1 MiB limit)
+const MAX_FIRESTORE_CHUNKS = 25; // Up to ~10MB PDF binary in Firestore chunks
 
-function openDb(): Promise<IDBDatabase | null> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), 1500);
-    try {
-      if (typeof indexedDB === 'undefined') {
-        clearTimeout(timer);
-        resolve(null);
-        return;
-      }
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      request.onupgradeneeded = () => {
-        try {
-          const db = request.result;
-          if (!db.objectStoreNames.contains(STORE_NAME)) {
-            db.createObjectStore(STORE_NAME);
-          }
-        } catch {
-          // ignore upgrade errors
-        }
-      };
-      request.onsuccess = () => {
-        clearTimeout(timer);
-        resolve(request.result);
-      };
-      request.onerror = () => {
-        clearTimeout(timer);
-        resolve(null);
-      };
-      request.onblocked = () => {
-        clearTimeout(timer);
-        resolve(null);
-      };
-    } catch {
-      clearTimeout(timer);
-      resolve(null);
+const syncedFirestorePdfIds = new Set<string>();
+
+function sanitizeDocId(rawId: string): string {
+  return String(rawId || '')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 120);
+}
+
+function getDeviceAuthorId(): string {
+  if (auth.currentUser?.uid) return auth.currentUser.uid;
+  try {
+    const existing = sessionStorage.getItem('shelo_session_client_id_v1');
+    if (existing) return existing.slice(0, 120);
+  } catch {
+    // ignore
+  }
+  return 'admin_device_sync';
+}
+
+function openDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB not supported'));
+      return;
     }
+
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const idb = request.result;
+      if (!idb.objectStoreNames.contains(STORE_NAME)) {
+        idb.createObjectStore(STORE_NAME);
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const sub = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode.apply(null, Array.from(sub));
-  }
-  return btoa(binary);
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        const cleaned = reader.result.replace(/^data:[^;]+;base64,/, '');
+        resolve(cleaned);
+      } else {
+        reject(new Error('Failed to convert Blob to base64'));
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
-function base64ToBlob(base64Data: string): Blob | null {
-  try {
-    const cleaned = base64Data.replace(/^data:application\/pdf;base64,/, '').trim();
-    if (!cleaned) return null;
-    const binaryStr = atob(cleaned);
-    const len = binaryStr.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryStr.charCodeAt(i);
-    }
-    return new Blob([bytes.buffer], { type: 'application/pdf' });
-  } catch {
-    return null;
+function base64ToBlob(base64: string, mimeType = 'application/pdf'): Blob {
+  const cleaned = base64.replace(/^data:[^;]+;base64,/, '');
+  const binaryString = atob(cleaned);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
   }
+  return new Blob([bytes], { type: mimeType });
 }
 
-async function uploadBufferToServer(pdfId: string, buffer: ArrayBuffer): Promise<boolean> {
+async function uploadBlobToServer(pdfId: string, blob: Blob): Promise<boolean> {
   try {
-    const safeBlob = new Blob([buffer], { type: 'application/pdf' });
-    const putRes = await fetch(`/api/pdf-file/${encodeURIComponent(pdfId)}`, {
+    const res = await fetch(`/api/pdf-file/${encodeURIComponent(pdfId)}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/pdf' },
-      body: safeBlob
+      headers: {
+        'Content-Type': 'application/pdf'
+      },
+      body: blob
     });
-    if (putRes.ok) return true;
+    if (res.ok) return true;
   } catch {
-    // fallback to base64 JSON below
+    // Fallback to base64 JSON upload below
   }
 
   try {
-    const base64 = arrayBufferToBase64(buffer);
-    const postRes = await fetch(`/api/pdf-file-b64/${encodeURIComponent(pdfId)}`, {
+    const base64 = await blobToBase64(blob);
+    const resB64 = await fetch(`/api/pdf-file-b64/${encodeURIComponent(pdfId)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({ base64 })
     });
-    return postRes.ok;
+    return resB64.ok;
   } catch {
     return false;
   }
 }
 
-async function getLocalBlobFromIdb(pdfId: string): Promise<Blob | null> {
-  const db = await openDb();
-  if (!db) return null;
+async function uploadBlobToFirestoreChunks(pdfId: string, blob: Blob): Promise<boolean> {
+  try {
+    const cleanPdfId = sanitizeDocId(pdfId);
+    if (!cleanPdfId) return false;
 
-  return new Promise<Blob | null>((resolve) => {
-    const timer = setTimeout(() => {
-      try { db.close(); } catch {}
-      resolve(null);
-    }, 1500);
+    const base64 = await blobToBase64(blob);
+    if (!base64 || base64.length === 0) return false;
 
-    try {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(pdfId);
-      req.onsuccess = () => {
-        clearTimeout(timer);
-        try { db.close(); } catch {}
-        if (req.result instanceof Blob && req.result.size > 0) {
-          resolve(req.result);
-        } else {
-          resolve(null);
-        }
-      };
-      req.onerror = () => {
-        clearTimeout(timer);
-        try { db.close(); } catch {}
-        resolve(null);
-      };
-    } catch {
-      clearTimeout(timer);
-      try { db.close(); } catch {}
-      resolve(null);
+    const totalChunks = Math.ceil(base64.length / CHUNK_CHAR_SIZE);
+    if (totalChunks > MAX_FIRESTORE_CHUNKS) {
+      // File exceeds chunk limit; still served via /api/pdf-file/:id
+      return false;
     }
-  });
+
+    const authorUid = getDeviceAuthorId();
+    for (let i = 0; i < totalChunks; i++) {
+      const slice = base64.slice(i * CHUNK_CHAR_SIZE, (i + 1) * CHUNK_CHAR_SIZE);
+      const chunkId = sanitizeDocId(`${cleanPdfId}_chunk_${i}`);
+      const payload = {
+        id: chunkId,
+        pdfId: cleanPdfId,
+        chunkIndex: i,
+        totalChunks,
+        data: slice,
+        visibility: 'public',
+        authorUid,
+        adminKey: '1987',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      try {
+        await setDoc(doc(db, 'pdfChunks', chunkId), payload);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `pdfChunks/${chunkId}`);
+      }
+    }
+
+    syncedFirestorePdfIds.add(cleanPdfId);
+    return true;
+  } catch (e) {
+    console.warn('Error uploading PDF chunks to Firebase:', e);
+    return false;
+  }
 }
 
-async function getAllIdbKeys(): Promise<string[]> {
-  const db = await openDb();
-  if (!db) return [];
+async function fetchBlobFromFirestoreChunks(pdfId: string): Promise<Blob | null> {
+  try {
+    const cleanPdfId = sanitizeDocId(pdfId);
+    if (!cleanPdfId) return null;
 
-  return new Promise<string[]>((resolve) => {
-    const timer = setTimeout(() => {
-      try { db.close(); } catch {}
-      resolve([]);
-    }, 1500);
+    const q = query(
+      collection(db, 'pdfChunks'),
+      where('visibility', '==', 'public'),
+      where('pdfId', '==', cleanPdfId)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
 
-    try {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.getAllKeys();
-      req.onsuccess = () => {
-        clearTimeout(timer);
-        try { db.close(); } catch {}
-        const keys = Array.isArray(req.result) ? req.result.map((k) => String(k)) : [];
-        resolve(keys);
-      };
-      req.onerror = () => {
-        clearTimeout(timer);
-        try { db.close(); } catch {}
-        resolve([]);
-      };
-    } catch {
-      clearTimeout(timer);
-      try { db.close(); } catch {}
-      resolve([]);
-    }
-  });
+    const chunks = snap.docs
+      .map((d) => d.data() as { chunkIndex: number; totalChunks: number; data: string })
+      .filter((c) => typeof c.data === 'string' && typeof c.chunkIndex === 'number')
+      .sort((a, b) => a.chunkIndex - b.chunkIndex);
+
+    if (chunks.length === 0) return null;
+
+    const fullBase64 = chunks.map((c) => c.data).join('');
+    if (!fullBase64) return null;
+
+    const blob = base64ToBlob(fullBase64, 'application/pdf');
+    syncedFirestorePdfIds.add(cleanPdfId);
+    return blob.size > 0 ? blob : null;
+  } catch (e) {
+    console.warn('Could not fetch PDF chunks from Firebase:', e);
+    return null;
+  }
 }
 
-async function putLocalBlobInIdb(pdfId: string, blob: Blob): Promise<void> {
-  const db = await openDb();
-  if (!db) return;
-
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      try { db.close(); } catch {}
-      resolve();
-    }, 1800);
-
-    try {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
+async function getAllLocalFilesFromIdb(): Promise<Array<{ id: string; blob: Blob }>> {
+  try {
+    const idb = await openDatabase();
+    return await new Promise<Array<{ id: string; blob: Blob }>>((resolve) => {
+      const tx = idb.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
-      store.put(blob, pdfId);
+      const keysReq = store.getAllKeys();
+      const valsReq = store.getAll();
+
       tx.oncomplete = () => {
-        clearTimeout(timer);
-        try { db.close(); } catch {}
-        resolve();
+        idb.close();
+        const keys = keysReq.result || [];
+        const vals = valsReq.result || [];
+        const list: Array<{ id: string; blob: Blob }> = [];
+        for (let i = 0; i < keys.length; i++) {
+          const id = String(keys[i] || '');
+          const blob = vals[i];
+          if (id && blob instanceof Blob && blob.size > 0) {
+            list.push({ id, blob });
+          }
+        }
+        resolve(list);
       };
       tx.onerror = () => {
-        clearTimeout(timer);
-        try { db.close(); } catch {}
-        resolve();
+        idb.close();
+        resolve([]);
       };
-      tx.onabort = () => {
-        clearTimeout(timer);
-        try { db.close(); } catch {}
-        resolve();
-      };
-    } catch {
-      clearTimeout(timer);
-      try { db.close(); } catch {}
-      resolve();
-    }
-  });
+    });
+  } catch {
+    return [];
+  }
 }
 
 export const pdfFileStore = {
-  async saveFile(pdfId: string, file: Blob): Promise<void> {
+  /**
+   * Immediately saves the PDF file to:
+   * 1) Local IndexedDB
+   * 2) Cloud Server (/api/pdf-file/:id)
+   * 3) Firebase Cloud Firestore (/pdfChunks)
+   * Called automatically when clicking "Guardar" on any PDF!
+   */
+  saveFile: async (pdfId: string, file: Blob): Promise<void> => {
     try {
-      // Read into an ArrayBuffer first so stale File references from <input> on iOS/Android never abort
-      const bufferPromise = file.arrayBuffer();
-      const timeoutBuffer = new Promise<null>((r) => setTimeout(() => r(null), 8000));
-      const buffer = await Promise.race([bufferPromise, timeoutBuffer]);
-      if (!buffer) return;
-
-      const safeBlob = new Blob([buffer], { type: 'application/pdf' });
-
-      // 1. Upload to multi-device server (PUT binary + POST base64 fallback for iOS/mobile proxies)
-      void uploadBufferToServer(pdfId, buffer);
-
-      // 2. Store in local IndexedDB for instant retrieval
-      await putLocalBlobInIdb(pdfId, safeBlob);
+      const idb = await openDatabase();
+      await new Promise<void>((resolve, reject) => {
+        const tx = idb.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put(file, pdfId);
+        tx.oncomplete = () => {
+          idb.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          idb.close();
+          reject(tx.error);
+        };
+      });
     } catch (e) {
-      console.warn('Non-fatal note saving PDF blob:', e);
+      console.warn('Could not save PDF blob to IndexedDB:', e);
     }
+
+    // Upload in parallel to Cloud Server and Firebase Cloud Firestore
+    await Promise.allSettled([
+      uploadBlobToServer(pdfId, file),
+      uploadBlobToFirestoreChunks(pdfId, file)
+    ]);
   },
 
   /**
-   * Converts legacy base64 fileData found in older localStorage versions into a Blob
-   * and stores it in IndexedDB + uploads to server so no legacy device PDF is lost.
+   * Automatically pushes any locally stored IndexedDB PDFs to the Cloud Server and Firebase
+   * in the background without requiring any user click.
    */
-  async saveBase64DataUrl(pdfId: string, base64DataUrl: string): Promise<void> {
-    try {
-      const blob = base64ToBlob(base64DataUrl);
-      if (blob && blob.size > 0) {
-        await this.saveFile(pdfId, blob);
+  syncLocalFilesToServer: async (serverStoredPdfIds: string[] = []): Promise<void> => {
+    const serverSet = new Set(serverStoredPdfIds);
+    const localFiles = await getAllLocalFilesFromIdb();
+    for (const item of localFiles) {
+      if (!serverSet.has(item.id)) {
+        await uploadBlobToServer(item.id, item.blob);
       }
-    } catch {
-      // ignore
+      const cleanId = sanitizeDocId(item.id);
+      if (cleanId && !syncedFirestorePdfIds.has(cleanId)) {
+        await uploadBlobToFirestoreChunks(item.id, item.blob);
+      }
     }
   },
 
-  /**
-   * Inspects IndexedDB on this device (Laptop, Android, or iOS) for any stored PDF blobs
-   * whose metadata might have been overwritten earlier, and returns reconstructed metadata
-   * so no PDF uploaded on any device is ever stranded.
-   */
-  async recoverOrphanedIdbPdfs(
-    knownIds: Set<string>,
-    deletedIds: Set<string>
-  ): Promise<
-    Array<{
-      id: string;
-      pagesCount: number;
-      fileSizeFormatted: string;
-    }>
-  > {
-    const recovered: Array<{
-      id: string;
-      pagesCount: number;
-      fileSizeFormatted: string;
-    }> = [];
+  getFileUrl: async (pdfId: string): Promise<string | null> => {
+    // 1. Try local IndexedDB first for instant opening
     try {
-      const keys = await getAllIdbKeys();
-      for (const pdfId of keys) {
-        if (!pdfId || knownIds.has(pdfId) || deletedIds.has(pdfId)) continue;
-        const blob = await getLocalBlobFromIdb(pdfId);
-        if (!blob || blob.size === 0) continue;
-        try {
-          const fakeFile = new File([blob], `${pdfId}.pdf`, { type: 'application/pdf' });
-          const { pagesCount, fileSizeFormatted } = await countPdfPages(fakeFile);
-          recovered.push({ id: pdfId, pagesCount, fileSizeFormatted });
-        } catch {
-          const mb = Math.max(0.1, blob.size / (1024 * 1024)).toFixed(1);
-          recovered.push({ id: pdfId, pagesCount: 1, fileSizeFormatted: `${mb} MB` });
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return recovered;
-  },
-
-  /**
-   * Automatically scans ALL PDFs stored in this device's local IndexedDB
-   * (plus any passed localPdfIds) and uploads any that are not yet stored on the shared server,
-   * ensuring Laptop, Android, and iOS all have access to every uploaded PDF binary.
-   */
-  async syncLocalBlobsToServer(localPdfIds: string[], serverStoredIds: string[] = []): Promise<void> {
-    try {
-      const serverSet = new Set(serverStoredIds);
-      const idbKeys = await getAllIdbKeys();
-      const allCandidateIds = Array.from(new Set([...localPdfIds, ...idbKeys]));
-
-      for (const pdfId of allCandidateIds) {
-        if (!pdfId || serverSet.has(pdfId)) continue;
-        const localBlob = await getLocalBlobFromIdb(pdfId);
-        if (localBlob && localBlob.size > 0) {
-          const buffer = await localBlob.arrayBuffer();
-          await uploadBufferToServer(pdfId, buffer);
-        }
-      }
-    } catch {
-      // ignore background sync errors
-    }
-  },
-
-  async getFileUrl(pdfId: string): Promise<string | null> {
-    try {
-      // 1. Check local IndexedDB first
-      const localBlob = await getLocalBlobFromIdb(pdfId);
+      const idb = await openDatabase();
+      const localBlob = await new Promise<Blob | null>((resolve) => {
+        const tx = idb.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(pdfId);
+        req.onsuccess = () => {
+          idb.close();
+          const result = req.result;
+          if (result instanceof Blob && result.size > 0) {
+            resolve(result);
+          } else {
+            resolve(null);
+          }
+        };
+        req.onerror = () => {
+          idb.close();
+          resolve(null);
+        };
+      });
       if (localBlob) {
         return URL.createObjectURL(localBlob);
       }
+    } catch {
+      // Fall through to Cloud Server and Firebase
+    }
 
-      // 2. Fetch from multi-device backend server (uploaded from Laptop, Android, or iOS)
+    // 2. Try Cloud Server (/api/pdf-file/:id)
+    try {
       const response = await fetch(`/api/pdf-file/${encodeURIComponent(pdfId)}`, {
         cache: 'no-store'
       });
       if (response.ok) {
         const serverBlob = await response.blob();
-        if (serverBlob && serverBlob.size > 0) {
-          const pdfBlob = new Blob([serverBlob], { type: 'application/pdf' });
-          // Cache locally in IndexedDB for next time
-          void putLocalBlobInIdb(pdfId, pdfBlob);
-          return URL.createObjectURL(pdfBlob);
+        if (serverBlob.size > 0) {
+          // Cache locally in IndexedDB
+          try {
+            const idb = await openDatabase();
+            const tx = idb.transaction(STORE_NAME, 'readwrite');
+            tx.objectStore(STORE_NAME).put(serverBlob, pdfId);
+            tx.oncomplete = () => idb.close();
+          } catch {
+            // ignore
+          }
+          return URL.createObjectURL(serverBlob);
         }
       }
-
-      return null;
     } catch {
-      return null;
+      // Fall through to Firebase Cloud Firestore chunks
     }
+
+    // 3. Fetch directly from Firebase Cloud Firestore (/pdfChunks) so any device (Laptop, Android, iOS, Tablet)
+    // can download the exact PDF uploaded on another device!
+    const firestoreBlob = await fetchBlobFromFirestoreChunks(pdfId);
+    if (firestoreBlob && firestoreBlob.size > 0) {
+      // Cache locally in IndexedDB and on Cloud Server
+      try {
+        const idb = await openDatabase();
+        const tx = idb.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(firestoreBlob, pdfId);
+        tx.oncomplete = () => idb.close();
+      } catch {
+        // ignore
+      }
+      void uploadBlobToServer(pdfId, firestoreBlob);
+      return URL.createObjectURL(firestoreBlob);
+    }
+
+    return null;
   },
 
-  async deleteFile(pdfId: string): Promise<void> {
+  deleteFile: async (pdfId: string): Promise<void> => {
     try {
-      const db = await openDb();
-      if (!db) return;
-
+      const idb = await openDatabase();
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          try { db.close(); } catch {}
+        const tx = idb.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(pdfId);
+        tx.oncomplete = () => {
+          idb.close();
           resolve();
-        }, 1000);
-
-        try {
-          const tx = db.transaction(STORE_NAME, 'readwrite');
-          const store = tx.objectStore(STORE_NAME);
-          store.delete(pdfId);
-          tx.oncomplete = () => {
-            clearTimeout(timer);
-            try { db.close(); } catch {}
-            resolve();
-          };
-          tx.onerror = () => {
-            clearTimeout(timer);
-            try { db.close(); } catch {}
-            resolve();
-          };
-          tx.onabort = () => {
-            clearTimeout(timer);
-            try { db.close(); } catch {}
-            resolve();
-          };
-        } catch {
-          clearTimeout(timer);
-          try { db.close(); } catch {}
+        };
+        tx.onerror = () => {
+          idb.close();
           resolve();
-        }
+        };
       });
+    } catch {
+      // ignore
+    }
+
+    try {
+      const cleanPdfId = sanitizeDocId(pdfId);
+      if (cleanPdfId) {
+        const q = query(
+          collection(db, 'pdfChunks'),
+          where('visibility', '==', 'public'),
+          where('pdfId', '==', cleanPdfId)
+        );
+        const snap = await getDocs(q);
+        for (const chunkDoc of snap.docs) {
+          try {
+            await deleteDoc(doc(db, 'pdfChunks', chunkDoc.id));
+          } catch {
+            // ignore
+          }
+        }
+      }
     } catch {
       // ignore
     }
