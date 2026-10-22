@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Shield, Lock, KeyRound, X, AlertCircle, CheckCircle2, Users } from 'lucide-react';
+import { verifyAdminKeyInput } from '../services/dbStorage';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -19,12 +20,12 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.trim() === '1987') {
+    if (verifyAdminKeyInput(password)) {
       setError('');
       setPassword('');
       onSuccess();
     } else {
-      setError('Clave de administrador incorrecta. Los usuarios sin clave permanecen en vista normal de cliente.');
+      setError('Clave de administrador incorrecta. Usa la misma clave Admin (****) en tu laptop, celular o iOS.');
     }
   };
 
@@ -56,19 +57,23 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             Conexión Exclusiva con Clave Admin
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Conéctate únicamente ingresando tu clave de administrador. Los demás usuarios conectados continúan en modo cliente normal.
+            Ingresa la <strong>misma Clave de Administrador (****)</strong> desde cualquier aparato (Laptop, Celular Android o iOS). Verás exactamente los mismos productos y PDFs sincronizados.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              Clave de Administrador
+              Clave Única de Administrador (Laptop, Celular e iOS)
             </label>
             <div className="relative">
               <Lock className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
@@ -82,7 +87,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               />
             </div>
             <p className="text-[11px] text-slate-400 text-center mt-1.5">
-              Clave requerida: <span className="font-mono font-bold text-amber-600 tracking-widest">****</span>
+              Clave requerida en cualquier dispositivo: <span className="font-mono font-bold text-amber-600 tracking-widest">****</span>
             </p>
           </div>
 
@@ -107,19 +112,19 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         <div className="mt-5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5 text-[11px] text-slate-600">
           <div className="flex items-center gap-1.5 font-bold text-slate-800">
             <Users className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span>Modo Multiusuario y Cierre Automático:</span>
+            <span>Misma Página y Misma Clave en Todos tus Aparatos:</span>
           </div>
           <p className="leading-relaxed">
-            • Tu sesión de Administrador se activa <strong>únicamente en tu navegador</strong>; a los demás usuarios les pedirá la clave si intentan entrar a Admin.
+            • Los PDFs y productos que guardes en tu <strong>Laptop, Celular Android o iPhone/iPad (iOS)</strong> se sincronizan automáticamente para que todos vean la misma página.
           </p>
           <p className="leading-relaxed">
-            • <strong>Al cerrar la página o pestaña</strong>, tu sesión de Administrador se cierra automáticamente por seguridad.
+            • Tu sesión de Administrador usa la <strong>misma clave (****)</strong> en cualquier aparato y se cierra automáticamente al cerrar la página.
           </p>
         </div>
 
         <div className="mt-4 text-center text-[11px] text-slate-400 border-t border-slate-100 pt-3 flex items-center justify-center gap-1.5">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Acceso seguro protegido Sheló NABEL</span>
+          <span>Sincronización multiplataforma Sheló NABEL</span>
         </div>
 
       </div>

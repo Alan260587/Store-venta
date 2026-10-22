@@ -1,6 +1,7 @@
 import { Product, PdfDocument, MultiUserPresence } from '../types';
 import { INITIAL_PRODUCTS } from '../data/initialProducts';
 import { INITIAL_PDFS } from '../data/initialPdfs';
+import { pdfFileStore } from './pdfFileStore';
 
 const PRODUCTS_KEY = 'shelo_nabel_products_v4';
 const PDFS_KEY = 'shelo_nabel_pdfs_v4';
@@ -8,6 +9,18 @@ const LEGACY_ADMIN_LOCAL_KEY = 'shelo_admin_unlocked_v1';
 const ADMIN_SESSION_KEY = 'shelo_admin_session_active_v2';
 const CLIENT_SESSION_ID_KEY = 'shelo_multiuser_client_id_v1';
 const MAX_PDF_LIMIT = 500;
+
+// Unified Administrator Key valid on ANY device (Laptop, Android, iOS)
+export const UNIFIED_ADMIN_KEY = '1987';
+
+export function verifyAdminKeyInput(rawInput: string): boolean {
+  // Normalize any fullwidth digits or mobile/iOS keyboard invisible whitespace
+  const normalized = String(rawInput || '')
+    .replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/\s+/g, '')
+    .trim();
+  return normalized === UNIFIED_ADMIN_KEY;
+}
 
 export function generateRandomDownloadKey(): string {
   const num = Math.floor(1000 + Math.random() * 9000);
@@ -80,8 +93,27 @@ function pushStateToServer(payload: {
     void fetch('/api/update-state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
       body: JSON.stringify(payload)
-    }).catch(() => {});
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = await res.json();
+        let updatedFromServer = false;
+        if (Array.isArray(data.products) && data.products.length > 0) {
+          const { normalized } = normalizeProductsList(data.products);
+          dbStorage.saveProductsLocalOnly(normalized);
+          updatedFromServer = true;
+        }
+        if (Array.isArray(data.pdfs) && data.pdfs.length > 0) {
+          dbStorage.savePdfsLocalOnly(data.pdfs);
+          updatedFromServer = true;
+        }
+        if (updatedFromServer) {
+          notifyPageUpdate('all');
+        }
+      })
+      .catch(() => {});
   } catch {
     // ignore offline/network errors
   }
@@ -147,9 +179,11 @@ export const dbStorage = {
 
   addProduct(product: Omit<Product, 'id'>): Product {
     const products = this.getProducts();
+    const now = Date.now();
     const newProduct: Product = {
       ...product,
-      id: `p-custom-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+      id: `p-custom-${now}-${Math.random().toString(36).substring(2, 7)}`,
+      updatedAt: now
     };
     const updated = [newProduct, ...products];
     this.saveProducts(updated, undefined, `¡Página actualizada! Producto "${newProduct.name}" guardado correctamente.`);
@@ -158,8 +192,12 @@ export const dbStorage = {
 
   updateProduct(updatedProduct: Product): void {
     const products = this.getProducts();
-    const updated = products.map(p => (p.id === updatedProduct.id ? updatedProduct : p));
-    this.saveProducts(updated, undefined, `¡Página actualizada! Producto "${updatedProduct.name}" actualizado.`);
+    const stampedProduct: Product = {
+      ...updatedProduct,
+      updatedAt: Date.now()
+    };
+    const updated = products.map(p => (p.id === stampedProduct.id ? stampedProduct : p));
+    this.saveProducts(updated, undefined, `¡Página actualizada! Producto "${stampedProduct.name}" actualizado.`);
   },
 
   deleteProduct(id: string): void {
@@ -173,12 +211,12 @@ export const dbStorage = {
       const stored = localStorage.getItem(PDFS_KEY);
       if (!stored) {
         localStorage.setItem(PDFS_KEY, JSON.stringify(INITIAL_PDFS));
-        return INITIAL_PDFS;
+        return [...INITIAL_PDFS];
       }
       const parsed: PdfDocument[] = JSON.parse(stored);
-      if (!Array.isArray(parsed)) {
+      if (!Array.isArray(parsed) || parsed.length === 0) {
         localStorage.setItem(PDFS_KEY, JSON.stringify(INITIAL_PDFS));
-        return INITIAL_PDFS;
+        return [...INITIAL_PDFS];
       }
       let needsSave = false;
       const normalized = parsed.map(p => {
@@ -191,10 +229,10 @@ export const dbStorage = {
       if (needsSave) {
         this.savePdfsLocalOnly(normalized);
       }
-      return normalized;
+      return [...normalized];
     } catch (e) {
       console.error('Error reading PDFs from localStorage:', e);
-      return INITIAL_PDFS;
+      return [...INITIAL_PDFS];
     }
   },
 
@@ -235,10 +273,11 @@ export const dbStorage = {
         };
       }
 
+      const now = Date.now();
       const chosenPrice = Number(pdf.price) === 0 ? 0 : 20;
       const cleanTitle = (pdf.title || 'Documento PDF').trim();
       const cleanKey = (pdf.downloadKey || generateRandomDownloadKey()).trim().toUpperCase();
-      const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const uniqueSuffix = `${now}-${Math.random().toString(36).substring(2, 9)}`;
 
       const newPdf: PdfDocument = {
         ...pdf,
@@ -246,7 +285,8 @@ export const dbStorage = {
         price: chosenPrice,
         downloadKey: cleanKey,
         id: `pdf-${uniqueSuffix}`,
-        uploadedAt: new Date().toISOString().split('T')[0]
+        uploadedAt: new Date().toISOString().split('T')[0],
+        updatedAt: now
       };
 
       const updated = [newPdf, ...pdfs];
@@ -285,11 +325,13 @@ export const dbStorage = {
       }
 
       const today = new Date().toISOString().split('T')[0];
+      const baseNow = Date.now();
       const createdPdfs: PdfDocument[] = pdfList.map((pdf, idx) => {
         const chosenPrice = Number(pdf.price) === 0 ? 0 : 20;
         const cleanTitle = (pdf.title || `Documento PDF ${idx + 1}`).trim();
         const cleanKey = (pdf.downloadKey || generateRandomDownloadKey()).trim().toUpperCase();
-        const uniqueSuffix = `${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 9)}`;
+        const itemTime = baseNow + idx;
+        const uniqueSuffix = `${itemTime}-${idx}-${Math.random().toString(36).substring(2, 9)}`;
 
         return {
           ...pdf,
@@ -297,7 +339,8 @@ export const dbStorage = {
           price: chosenPrice,
           downloadKey: cleanKey,
           id: `pdf-${uniqueSuffix}`,
-          uploadedAt: today
+          uploadedAt: today,
+          updatedAt: itemTime
         };
       });
 
@@ -340,9 +383,10 @@ export const dbStorage = {
     const cleanPrice = Number(updatedPdf.price) === 0 ? 0 : 20;
     const cleanTitle = (updatedPdf.title || 'Documento PDF').trim();
     const cleanKey = (updatedPdf.downloadKey || generateRandomDownloadKey()).trim().toUpperCase();
+    const now = Date.now();
     const updated = pdfs.map(p =>
       p.id === updatedPdf.id
-        ? { ...updatedPdf, title: cleanTitle, price: cleanPrice, downloadKey: cleanKey }
+        ? { ...updatedPdf, title: cleanTitle, price: cleanPrice, downloadKey: cleanKey, updatedAt: now }
         : p
     );
     this.savePdfs(updated, undefined, `¡Página actualizada! PDF "${cleanTitle}" actualizado.`);
@@ -362,6 +406,7 @@ export const dbStorage = {
       void fetch('/api/reset-defaults', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({ products: INITIAL_PRODUCTS, pdfs: INITIAL_PDFS })
       }).catch(() => {});
     } catch (e) {
@@ -370,8 +415,9 @@ export const dbStorage = {
   },
 
   /**
-   * Non-destructive multi-user sync: sends local products & PDFs to the server
-   * and receives the merged list so NO previously uploaded PDFs or added products are ever lost.
+   * Non-destructive cross-device sync (Laptop, Android, iOS):
+   * Sends local products & PDFs to the server, receives the canonical merged list,
+   * and uploads any local IndexedDB PDF binaries that aren't on the server yet.
    */
   async syncWithServer(): Promise<{
     products: Product[];
@@ -384,6 +430,7 @@ export const dbStorage = {
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({
           products: localProducts,
           pdfs: localPdfs
@@ -399,9 +446,18 @@ export const dbStorage = {
       if (Array.isArray(data.pdfs) && data.pdfs.length > 0) {
         this.savePdfsLocalOnly(data.pdfs);
       }
+
+      // Sync any local IndexedDB PDF binary files to the shared server in background
+      const mergedPdfs = this.getPdfs();
+      const storedPdfIds = Array.isArray(data.storedPdfIds) ? data.storedPdfIds : [];
+      void pdfFileStore.syncLocalBlobsToServer(
+        mergedPdfs.map((p) => p.id),
+        storedPdfIds
+      );
+
       return {
         products: this.getProducts(),
-        pdfs: this.getPdfs(),
+        pdfs: mergedPdfs,
         presence: data.presence
       };
     } catch {
@@ -435,6 +491,7 @@ export const dbStorage = {
       void fetch('/api/presence/role', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({
           clientId,
           role: unlocked ? 'admin' : 'client'

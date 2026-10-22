@@ -25,6 +25,7 @@ export interface Product {
   isStarProduct?: boolean;
   isNew?: boolean;
   availableColors?: ProductColorOption[];
+  updatedAt?: number;
 }
 
 export interface PdfDocument {
@@ -38,6 +39,7 @@ export interface PdfDocument {
   fileSize: string;
   fileData?: string;
   category?: string;
+  updatedAt?: number;
 }
 
 export interface CartItem {

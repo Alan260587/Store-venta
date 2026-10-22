@@ -92,22 +92,26 @@ export default function App() {
     };
   }, [refreshPageData]);
 
-  // 1. Non-destructively sync local PDFs & Products with Multi-User Server on mount
-  // and subscribe to real-time updates via Server-Sent Events (SSE)
+  // 1. Non-destructively sync local PDFs & Products with Multi-User Server on mount,
+  // focus, visibilitychange, periodic interval, and real-time Server-Sent Events (SSE)
+  // so Laptop, Android, and iOS always show the exact same products and PDFs!
+  const performCrossDeviceSync = useCallback(async () => {
+    const synced = await dbStorage.syncWithServer();
+    if (!synced) return;
+    setProducts([...synced.products]);
+    setPdfs([...synced.pdfs]);
+    if (synced.presence) {
+      setPresence(synced.presence);
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     const clientId = dbStorage.getSessionClientId();
     const initialRole = dbStorage.isAdminUnlocked() ? 'admin' : 'client';
 
-    // Merge local storage with server so nothing added previously is ever removed
-    void dbStorage.syncWithServer().then((synced) => {
-      if (!isMounted || !synced) return;
-      setProducts([...synced.products]);
-      setPdfs([...synced.pdfs]);
-      if (synced.presence) {
-        setPresence(synced.presence);
-      }
-    });
+    // Immediate non-destructive merge on mount
+    void performCrossDeviceSync();
 
     // Connect to real-time multi-user event stream
     let eventSource: EventSource | null = null;
@@ -119,9 +123,12 @@ export default function App() {
       eventSource.addEventListener('init', (event: MessageEvent) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.presence && isMounted) {
+          if (!isMounted) return;
+          if (data.presence) {
             setPresence(data.presence);
           }
+          // Run non-destructive sync on init so local + server items are merged
+          void performCrossDeviceSync();
         } catch {
           // ignore parse errors
         }
@@ -161,13 +168,32 @@ export default function App() {
       // Fallback if SSE is unavailable
     }
 
+    // Re-sync whenever mobile/iOS tab becomes visible or focused, plus every 4s for mobile network resilience
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void performCrossDeviceSync();
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    const syncInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void performCrossDeviceSync();
+      }
+    }, 4000);
+
     return () => {
       isMounted = false;
+      clearInterval(syncInterval);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       if (eventSource) {
         eventSource.close();
       }
     };
-  }, []);
+  }, [performCrossDeviceSync]);
 
   // 2. Automatic Admin Session Logout when closing the page/tab
   useEffect(() => {
@@ -195,12 +221,13 @@ export default function App() {
     };
   }, []);
 
-  // Unlock Admin ONLY for this current user session using the Admin Key (****)
+  // Unlock Admin ONLY for this current user session using the same Admin Key (****) on any device
   const handleUnlockAdmin = () => {
     dbStorage.setAdminUnlocked(true);
     setIsAdminUnlocked(true);
     setIsAdminModalOpen(false);
     setActiveTab('admin');
+    void performCrossDeviceSync();
   };
 
   const handleLockAdmin = () => {
@@ -349,12 +376,15 @@ export default function App() {
 
             <button
               type="button"
-              onClick={() => refreshPageData('¡Página actualizada manualmente al instante!')}
+              onClick={() => {
+                void performCrossDeviceSync();
+                refreshPageData('¡Página sincronizada entre Laptop, Celular e iOS al instante!');
+              }}
               className="px-2 py-0.5 bg-white/80 hover:bg-white text-slate-950 rounded-md text-[11px] font-bold flex items-center gap-1"
-              title="Actualizar vista de la página"
+              title="Sincronizar y actualizar vista entre todos tus aparatos"
             >
               <RefreshCw className="w-3 h-3" />
-              <span className="hidden sm:inline">Actualizar</span>
+              <span className="hidden sm:inline">Sincronizar</span>
             </button>
 
             {activeTab !== 'admin' && (
