@@ -127,53 +127,10 @@ async function uploadBlobToServer(pdfId: string, blob: Blob): Promise<boolean> {
   }
 }
 
-async function uploadBlobToFirestoreChunks(pdfId: string, blob: Blob): Promise<boolean> {
-  try {
-    const cleanPdfId = sanitizeDocId(pdfId);
-    if (!cleanPdfId) return false;
-
-    const base64 = await blobToBase64(blob);
-    if (!base64 || base64.length === 0) return false;
-
-    const totalChunks = Math.ceil(base64.length / CHUNK_CHAR_SIZE);
-    if (totalChunks > MAX_FIRESTORE_CHUNKS) {
-      // File exceeds chunk limit; still served via /api/pdf-file/:id
-      return false;
-    }
-
-    const authorUid = getDeviceAuthorId();
-    for (let i = 0; i < totalChunks; i++) {
-      const slice = base64.slice(i * CHUNK_CHAR_SIZE, (i + 1) * CHUNK_CHAR_SIZE);
-      const chunkId = sanitizeDocId(`${cleanPdfId}_chunk_${i}`);
-      const payload = {
-        id: chunkId,
-        pdfId: cleanPdfId,
-        chunkIndex: i,
-        totalChunks,
-        data: slice,
-        visibility: 'public',
-        authorUid,
-        adminKey: '1987',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-      try {
-        await setDoc(doc(db, 'pdfChunks', chunkId), payload);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('Quota limit exceeded') || msg.includes('Quota exceeded') || msg.includes('resource-exhausted')) {
-          return false;
-        }
-        handleFirestoreError(err, OperationType.WRITE, `pdfChunks/${chunkId}`);
-      }
-    }
-
-    syncedFirestorePdfIds.add(cleanPdfId);
-    return true;
-  } catch (e) {
-    console.warn('Error uploading PDF chunks to Firebase:', e);
-    return false;
-  }
+async function uploadBlobToFirestoreChunks(_pdfId: string, _blob: Blob): Promise<boolean> {
+  // PDF binaries are stored in IndexedDB and on the backend server (/api/pdf-file/:id)
+  // to avoid exhausting Firestore's free daily write quota.
+  return false;
 }
 
 async function fetchBlobFromFirestoreChunks(pdfId: string): Promise<Blob | null> {
@@ -428,27 +385,6 @@ export const pdfFileStore = {
           resolve();
         };
       });
-    } catch {
-      // ignore
-    }
-
-    try {
-      const cleanPdfId = sanitizeDocId(pdfId);
-      if (cleanPdfId) {
-        const q = query(
-          collection(db, 'pdfChunks'),
-          where('visibility', '==', 'public'),
-          where('pdfId', '==', cleanPdfId)
-        );
-        const snap = await getDocs(q);
-        for (const chunkDoc of snap.docs) {
-          try {
-            await deleteDoc(doc(db, 'pdfChunks', chunkDoc.id));
-          } catch {
-            // ignore
-          }
-        }
-      }
     } catch {
       // ignore
     }

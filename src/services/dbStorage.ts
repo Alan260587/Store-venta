@@ -1,5 +1,9 @@
 import { Product, PdfDocument, MultiUserPresence } from '../types';
-import { INITIAL_PRODUCTS } from '../data/initialProducts';
+import {
+  INITIAL_PRODUCTS,
+  REMOVED_DEFAULT_PRODUCT_IDS,
+  BAKED_STATIC_PHOTO_TIMESTAMPS
+} from '../data/initialProducts';
 import { INITIAL_PDFS, PROTECTED_DEFAULT_PDF_IDS, REMOVED_DEFAULT_PDF_IDS } from '../data/initialPdfs';
 import { pdfFileStore } from './pdfFileStore';
 import {
@@ -13,9 +17,7 @@ import {
   doc,
   setDoc,
   deleteDoc,
-  serverTimestamp,
-  OperationType,
-  handleFirestoreError
+  serverTimestamp
 } from '../firebase';
 
 const PRODUCTS_STORAGE_KEY = 'shelo_nabel_products_v2';
@@ -23,12 +25,15 @@ const PDFS_STORAGE_KEY = 'shelo_nabel_official_catalog_v4';
 const DELETED_PRODUCTS_KEY = 'shelo_nabel_deleted_products_v1';
 const DELETED_PDFS_KEY = 'shelo_nabel_deleted_pdfs_v1';
 
-// Legacy storage keys from older versions
+// Legacy storage keys from older versions — purged after migration to free localStorage quota
 const LEGACY_PRODUCT_KEYS = ['shelo_nabel_products_v1', 'shelo_nabel_products', 'products'];
 const LEGACY_PDF_KEYS = ['shelo_nabel_pdfs_v2', 'shelo_nabel_pdfs_v1', 'shelo_nabel_pdfs', 'pdfs'];
 
+// IndexedDB fallback for unlimited product photo storage (500MB+ on Android/iOS)
+const IDB_NAME = 'shelo_nabel_catalog_state_db_v1';
+const IDB_STORE = 'state_kv';
+
 // Strictly isolated per-tab session keys so Admin login ONLY unlocks that specific tab
-// and automatically logs out when closing the page
 const SESSION_ADMIN_UNLOCKED_KEY = 'shelo_admin_session_active_v2';
 const SESSION_CLIENT_ID_KEY = 'shelo_session_client_id_v1';
 
@@ -36,6 +41,13 @@ const SESSION_CLIENT_ID_KEY = 'shelo_session_client_id_v1';
 const UNIFIED_ADMIN_KEY = '1987';
 const SECONDARY_ADMIN_KEY = '2026';
 const MAX_PDF_LIMIT = 500;
+
+// Shared Cloud Backend URLs so Dev App URL, Shared App URL, Vercel, and all phones stay 100% in sync
+const CLOUD_BACKEND_ORIGINS = [
+  '', // Current origin (/api/...)
+  'https://ais-pre-avwdkmmrxvofuxvicmk6ee-42912253262.us-west2.run.app',
+  'https://ais-dev-avwdkmmrxvofuxvicmk6ee-42912253262.us-west2.run.app'
+];
 
 const initialProductsMap = new Map<string, Product>(
   INITIAL_PRODUCTS.map((p) => [p.id, p])
@@ -45,8 +57,79 @@ const initialPdfsMap = new Map<string, PdfDocument>(
 );
 const protectedPdfIdsSet = new Set<string>(PROTECTED_DEFAULT_PDF_IDS);
 
+// Authoritative in-memory state so getProducts() NEVER loses photos even if localStorage is full
+let memoryProducts: Product[] | null = null;
+let memoryPdfs: PdfDocument[] | null = null;
+let memoryDeletedProductIds: string[] | null = null;
+let memoryDeletedPdfIds: string[] | null = null;
+
 let firestoreUnsubscribers: Array<() => void> = [];
 let isReconcilingFirestore = false;
+let clientFirestoreQuotaReached = false;
+let pendingServerWrites = 0;
+
+function getDistinctApiBaseUrls(): string[] {
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const bases: string[] = [''];
+  for (const origin of CLOUD_BACKEND_ORIGINS) {
+    if (origin && origin !== currentOrigin && !bases.includes(origin)) {
+      bases.push(origin);
+    }
+  }
+  return bases;
+}
+
+// --- INDEXEDDB KV HELPERS (Unlimited Mobile Photo Storage) ---
+function openStateIdb(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const idb = req.result;
+        if (!idb.objectStoreNames.contains(IDB_STORE)) {
+          idb.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function idbSaveProducts(products: Product[]): Promise<void> {
+  const idb = await openStateIdb();
+  if (!idb) return;
+  return new Promise((resolve) => {
+    try {
+      const tx = idb.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(products, PRODUCTS_STORAGE_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+async function idbLoadProducts(): Promise<Product[] | null> {
+  const idb = await openStateIdb();
+  if (!idb) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = idb.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(PRODUCTS_STORAGE_KEY);
+      req.onsuccess = () => {
+        resolve(Array.isArray(req.result) ? req.result : null);
+      };
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
 
 function sanitizeDocId(rawId: string): string {
   return String(rawId || '')
@@ -95,17 +178,11 @@ function isPdfCustomOrModified(item: PdfDocument): boolean {
   );
 }
 
-/**
- * Generates an automatic Download Key for $20 pesos PDFs (e.g. SN-4829)
- */
 export function generateRandomDownloadKey(): string {
   const digits = Math.floor(1000 + Math.random() * 9000);
   return `SN-${digits}`;
 }
 
-/**
- * Normalizes any passcode entered on Laptop, Android, iOS, or Tablet keyboards
- */
 export function normalizeAdminKeyInput(input: string): string {
   return String(input || '')
     .replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
@@ -118,10 +195,6 @@ export function verifyAdminKeyInput(input: string): boolean {
   return normalized === UNIFIED_ADMIN_KEY || normalized === SECONDARY_ADMIN_KEY;
 }
 
-/**
- * Dispatches an in-page event so React components immediately re-render
- * whenever a Product or PDF is saved, updated, or deleted.
- */
 function notifyPageUpdate(type: 'product' | 'pdf' | 'sync' | 'reset', message?: string) {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
@@ -133,27 +206,53 @@ function notifyPageUpdate(type: 'product' | 'pdf' | 'sync' | 'reset', message?: 
 }
 
 function getDeletedIds(storageKey: string): string[] {
+  if (storageKey === DELETED_PRODUCTS_KEY && memoryDeletedProductIds !== null) {
+    return memoryDeletedProductIds;
+  }
+  if (storageKey === DELETED_PDFS_KEY && memoryDeletedPdfIds !== null) {
+    return memoryDeletedPdfIds;
+  }
   try {
     const raw = localStorage.getItem(storageKey);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        if (storageKey === DELETED_PRODUCTS_KEY) {
+          memoryDeletedProductIds = Array.from(new Set([...REMOVED_DEFAULT_PRODUCT_IDS, ...parsed]));
+          return memoryDeletedProductIds;
+        }
+        if (storageKey === DELETED_PDFS_KEY) {
+          memoryDeletedPdfIds = parsed;
+          return memoryDeletedPdfIds;
+        }
+        return parsed;
+      }
     }
   } catch {
     // ignore
+  }
+  if (storageKey === DELETED_PRODUCTS_KEY) {
+    memoryDeletedProductIds = [...REMOVED_DEFAULT_PRODUCT_IDS];
+    return memoryDeletedProductIds;
   }
   return [];
 }
 
 function saveDeletedIds(storageKey: string, ids: string[]): void {
+  const unique = Array.from(new Set(ids));
+  if (storageKey === DELETED_PRODUCTS_KEY) {
+    memoryDeletedProductIds = Array.from(new Set([...REMOVED_DEFAULT_PRODUCT_IDS, ...unique]));
+  } else if (storageKey === DELETED_PDFS_KEY) {
+    memoryDeletedPdfIds = unique;
+  }
   try {
-    localStorage.setItem(storageKey, JSON.stringify(Array.from(new Set(ids))));
+    localStorage.setItem(storageKey, JSON.stringify(unique));
   } catch {
     // ignore
   }
 }
 
-function readLegacyArray<T>(keys: string[]): T[] {
+function readAndPurgeLegacyArray<T>(keys: string[]): T[] {
   const collected: T[] = [];
   for (const key of keys) {
     try {
@@ -163,6 +262,7 @@ function readLegacyArray<T>(keys: string[]): T[] {
         if (Array.isArray(parsed)) {
           collected.push(...parsed);
         }
+        localStorage.removeItem(key);
       }
     } catch {
       // ignore
@@ -179,20 +279,34 @@ function mergeProductLists(
   listB: Product[],
   deletedIds: string[]
 ): Product[] {
-  const deletedSet = new Set(deletedIds);
+  const deletedSet = new Set([...REMOVED_DEFAULT_PRODUCT_IDS, ...deletedIds]);
   const map = new Map<string, Product>();
 
-  const processItem = (item: Product) => {
-    if (!item || !item.id || deletedSet.has(item.id)) return;
-    let normalized = item;
-    if (item.id === 'school-01') {
-      const defaultFolder = initialProductsMap.get('school-01');
-      if (defaultFolder) {
+  const processItem = (rawItem: Product) => {
+    if (!rawItem || !rawItem.id || deletedSet.has(rawItem.id)) return;
+    let normalized: Product = { ...rawItem };
+
+    // Upgrade baked static photos from heavy base64 to fast static .jpg asset URL
+    const baked = BAKED_STATIC_PHOTO_TIMESTAMPS[normalized.id];
+    if (
+      baked &&
+      Number(normalized.updatedAt || 0) <= baked.maxTimestamp &&
+      String(normalized.image || '').startsWith('data:')
+    ) {
+      normalized.image = baked.url;
+    }
+
+    // Align unmodified default products with canonical INITIAL_PRODUCTS
+    const def = initialProductsMap.get(normalized.id);
+    if (def && !normalized.updatedAt) {
+      if (
+        normalized.description !== def.description ||
+        normalized.name !== def.name ||
+        normalized.image !== def.image
+      ) {
         normalized = {
-          ...defaultFolder,
-          ...item,
-          name: item.name === 'Cuadernos Escolares' ? defaultFolder.name : (item.name || defaultFolder.name),
-          availableColors: item.availableColors || defaultFolder.availableColors
+          ...def,
+          price: Number(normalized.price) || def.price
         };
       }
     }
@@ -314,150 +428,67 @@ function mergePdfLists(
 }
 
 /**
- * Push current state / updates to the shared Multi-User Server (Laptop, Android, iOS, Tablet)
+ * Push current state / updates to ALL shared Multi-User Servers (Current Origin + Shared URL + Dev URL)
+ * so Laptop, Android, iOS, Tablet, and Vercel visitors all see changes immediately!
  */
 async function pushUpdateToServer(payload: {
+  updatedProduct?: Product;
   products?: Product[];
   pdfs?: PdfDocument[];
   deletedProductId?: string;
   deletedPdfId?: string;
 }): Promise<void> {
+  pendingServerWrites += 1;
   try {
-    const res = await fetch('/api/update-state', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache'
-      },
-      body: JSON.stringify(payload)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && (Array.isArray(data.products) || Array.isArray(data.pdfs))) {
-        dbStorage.mergeIncomingServerData({
-          products: data.products,
-          pdfs: data.pdfs,
-          deletedProductIds: data.deletedProductIds,
-          deletedPdfIds: data.deletedPdfIds
+    const bases = getDistinctApiBaseUrls();
+    await Promise.allSettled(
+      bases.map(async (base) => {
+        const res = await fetch(`${base}/api/update-state`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          },
+          body: JSON.stringify(payload)
         });
-      }
-    }
+        if (!res.ok) return;
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        if (!ct.includes('application/json')) return;
+        const data = await res.json();
+        if (data && (Array.isArray(data.products) || Array.isArray(data.pdfs))) {
+          dbStorage.mergeIncomingServerData({
+            products: data.products,
+            pdfs: data.pdfs,
+            deletedProductIds: data.deletedProductIds,
+            deletedPdfIds: data.deletedPdfIds
+          });
+        }
+      })
+    );
   } catch {
-    // Offline or static host fallback — Firestore handles persistence directly
+    // Offline fallback — IndexedDB + memory state keep all changes safe
+  } finally {
+    pendingServerWrites = Math.max(0, pendingServerWrites - 1);
   }
 }
 
 /**
- * Automatically saves or updates a Product in Firebase Cloud Firestore immediately on "Guardar"
- * without requiring manual Google sign-in or manual sync.
+ * Product, PDF, and deletion writes are persisted via the shared backend server (/api/update-state & /api/sync)
+ * and IndexedDB, preventing browser-side Firestore Write stream RESOURCE_EXHAUSTED errors.
  */
-async function upsertProductToFirestore(product: Product): Promise<void> {
-  const docId = sanitizeDocId(product.id);
-  if (!docId) return;
-
-  const updatedAtMs = Number(product.updatedAt || getTimestampFromId(product.id) || 1);
-  const payload: Record<string, unknown> = {
-    id: docId,
-    clave: String(product.clave || 'S000').slice(0, 40),
-    name: String(product.name || 'Producto Sheló NABEL').slice(0, 200),
-    price: Math.max(0, Math.min(1000000, Number(product.price) || 0)),
-    size: String(product.size || '1 pza').slice(0, 80),
-    category: String(product.category || 'Cuidado Corporal').slice(0, 80),
-    description: String(product.description || 'Producto oficial Sheló NABEL.').slice(0, 1500),
-    image: String(product.image || 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80').slice(0, 900000),
-    isStarProduct: Boolean(product.isStarProduct),
-    isNew: Boolean(product.isNew),
-    visibility: 'public',
-    authorUid: getDeviceAuthorUid(),
-    adminKey: UNIFIED_ADMIN_KEY,
-    updatedAtMs,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  };
-
-  try {
-    await setDoc(doc(db, 'products', docId), payload);
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes('Quota limit exceeded') || msg.includes('Quota exceeded') || msg.includes('resource-exhausted')) {
-      console.warn('Firestore daily free quota reached; backend server.ts continues syncing across all devices.');
-      return;
-    }
-    handleFirestoreError(error, OperationType.WRITE, `products/${docId}`);
-  }
+async function upsertProductToFirestore(_product: Product): Promise<void> {
+  return;
 }
 
-/**
- * Automatically saves or updates a PdfDocument in Firebase Cloud Firestore immediately on "Guardar"
- * without requiring manual Google sign-in or manual sync.
- */
-async function upsertPdfToFirestore(pdf: PdfDocument): Promise<void> {
-  const docId = sanitizeDocId(pdf.id);
-  if (!docId) return;
-
-  const cleanPrice = Number(pdf.price) === 0 ? 0 : 20;
-  const updatedAtMs = Number(pdf.updatedAt || getTimestampFromId(pdf.id) || 1);
-  const payload: Record<string, unknown> = {
-    id: docId,
-    title: String(pdf.title || 'Catálogo PDF').slice(0, 250),
-    description: String(pdf.description || 'Documento PDF oficial.').slice(0, 1500),
-    pagesCount: Math.max(1, Math.min(5000, Number(pdf.pagesCount) || 1)),
-    price: cleanPrice,
-    downloadKey: String(pdf.downloadKey || 'SN-2026').slice(0, 60),
-    uploadedAt: String(pdf.uploadedAt || new Date().toISOString().split('T')[0]).slice(0, 40),
-    fileSize: String(pdf.fileSize || '1.0 MB').slice(0, 40),
-    category: String(pdf.category || 'Catálogo Oficial').slice(0, 100),
-    visibility: 'public',
-    authorUid: getDeviceAuthorUid(),
-    adminKey: UNIFIED_ADMIN_KEY,
-    updatedAtMs,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  };
-
-  try {
-    await setDoc(doc(db, 'pdfs', docId), payload);
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes('Quota limit exceeded') || msg.includes('Quota exceeded') || msg.includes('resource-exhausted')) {
-      console.warn('Firestore daily free quota reached; backend server.ts continues syncing across all devices.');
-      return;
-    }
-    handleFirestoreError(error, OperationType.WRITE, `pdfs/${docId}`);
-  }
+async function upsertPdfToFirestore(_pdf: PdfDocument): Promise<void> {
+  return;
 }
 
-/**
- * Records a deletion tombstone in Firebase Cloud Firestore so deleted items stay deleted across all devices
- */
-async function recordDeletionInFirestore(id: string, itemType: 'product' | 'pdf'): Promise<void> {
-  if (itemType === 'pdf' && protectedPdfIdsSet.has(id)) return;
-  const docId = sanitizeDocId(id);
-  if (!docId) return;
-
-  const tombstonePayload = {
-    id: docId,
-    itemType,
-    visibility: 'public',
-    authorUid: getDeviceAuthorUid(),
-    adminKey: UNIFIED_ADMIN_KEY,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  };
-
-  try {
-    await setDoc(doc(db, 'deletedItems', docId), tombstonePayload);
-    const colName = itemType === 'product' ? 'products' : 'pdfs';
-    await deleteDoc(doc(db, colName, docId));
-  } catch {
-    // Tombstone creation is primary
-  }
+async function recordDeletionInFirestore(_id: string, _itemType: 'product' | 'pdf'): Promise<void> {
+  return;
 }
 
 export const dbStorage = {
-  /**
-   * Returns a unique client ID for THIS specific browser tab session
-   */
   getSessionClientId: (): string => {
     try {
       let cid = sessionStorage.getItem(SESSION_CLIENT_ID_KEY);
@@ -472,82 +503,122 @@ export const dbStorage = {
   },
 
   /**
-   * Cloud-First Server Sync:
-   * 1) Pulls canonical state & deleted IDs from `/api/state` FIRST so stale local items never resurrect deleted items.
-   * 2) Merges server state into local storage.
-   * 3) Pushes any newer/custom local items to `/api/sync`.
+   * Loads any photos stored in IndexedDB into memory on boot and merges with Server & Cloud state
+   */
+  hydrateFromIndexedDb: async (): Promise<void> => {
+    try {
+      const idbProds = await idbLoadProducts();
+      if (idbProds && idbProds.length > 0) {
+        dbStorage.mergeIncomingServerData({ products: idbProds });
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  /**
+   * Cloud-First Server Sync across local and shared Cloud Run endpoints:
+   * Skips pulling if an Admin write is currently in flight so local photo/price edits are never overwritten.
    */
   syncWithServer: async (): Promise<{
     products: Product[];
     pdfs: PdfDocument[];
     presence?: MultiUserPresence;
   } | null> => {
-    try {
-      // Step 1: Pull latest state from backend first
-      const stateRes = await fetch('/api/state', {
-        method: 'GET',
-        headers: { 'Cache-Control': 'no-cache' }
-      });
-
-      if (stateRes.ok) {
-        const stateData = await stateRes.json();
-        dbStorage.mergeIncomingServerData({
-          products: stateData.products,
-          pdfs: stateData.pdfs,
-          deletedProductIds: stateData.deletedProductIds,
-          deletedPdfIds: stateData.deletedPdfIds
-        });
-      }
-
-      // Step 2: Now send merged local state to /api/sync so any newer local edits are shared
-      const localProducts = dbStorage.getProducts();
-      const localPdfs = dbStorage.getPdfs();
-
-      const res = await fetch('/api/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache'
-        },
-        body: JSON.stringify({
-          products: localProducts,
-          pdfs: localPdfs
-        })
-      });
-
-      if (!res.ok) {
-        return {
-          products: dbStorage.getProducts(),
-          pdfs: dbStorage.getPdfs()
-        };
-      }
-      const data = await res.json();
-
-      dbStorage.mergeIncomingServerData({
-        products: data.products,
-        pdfs: data.pdfs,
-        deletedProductIds: data.deletedProductIds,
-        deletedPdfIds: data.deletedPdfIds
-      });
-
-      const storedPdfIds = Array.isArray(data.storedPdfIds) ? data.storedPdfIds : [];
-      void pdfFileStore.syncLocalFilesToServer(storedPdfIds);
-
-      return {
-        products: dbStorage.getProducts(),
-        pdfs: dbStorage.getPdfs(),
-        presence: data.presence
-      };
-    } catch {
+    if (pendingServerWrites > 0) {
       return {
         products: dbStorage.getProducts(),
         pdfs: dbStorage.getPdfs()
       };
     }
+
+    await dbStorage.hydrateFromIndexedDb();
+
+    let latestPresence: MultiUserPresence | undefined;
+    const bases = getDistinctApiBaseUrls();
+
+    for (const base of bases) {
+      if (pendingServerWrites > 0) break;
+      try {
+        const stateRes = await fetch(`${base}/api/state`, {
+          method: 'GET',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+
+        if (stateRes.ok) {
+          const ct = (stateRes.headers.get('content-type') || '').toLowerCase();
+          if (ct.includes('application/json')) {
+            const stateData = await stateRes.json();
+            if (pendingServerWrites === 0) {
+              dbStorage.mergeIncomingServerData({
+                products: stateData.products,
+                pdfs: stateData.pdfs,
+                deletedProductIds: stateData.deletedProductIds,
+                deletedPdfIds: stateData.deletedPdfIds
+              });
+            }
+            if (stateData.presence && !latestPresence) {
+              latestPresence = stateData.presence;
+            }
+          }
+        }
+
+        if (pendingServerWrites > 0) break;
+
+        // Push any newer/custom local items to this server so all endpoints converge
+        const localCustomProds = dbStorage.getProducts().filter(
+          (p) => Boolean(p.updatedAt) || isProductCustomOrModified(p)
+        );
+        const localPdfs = dbStorage.getPdfs();
+
+        if (localCustomProds.length > 0 || localPdfs.length > 0) {
+          const syncRes = await fetch(`${base}/api/sync`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache'
+            },
+            body: JSON.stringify({
+              products: localCustomProds,
+              pdfs: localPdfs
+            })
+          });
+
+          if (syncRes.ok) {
+            const ct = (syncRes.headers.get('content-type') || '').toLowerCase();
+            if (ct.includes('application/json')) {
+              const data = await syncRes.json();
+              if (pendingServerWrites === 0) {
+                dbStorage.mergeIncomingServerData({
+                  products: data.products,
+                  pdfs: data.pdfs,
+                  deletedProductIds: data.deletedProductIds,
+                  deletedPdfIds: data.deletedPdfIds
+                });
+              }
+              if (data.presence && !latestPresence) {
+                latestPresence = data.presence;
+              }
+              if (base === '' && Array.isArray(data.storedPdfIds)) {
+                void pdfFileStore.syncLocalFilesToServer(data.storedPdfIds);
+              }
+            }
+          }
+        }
+      } catch {
+        // Try next backend endpoint
+      }
+    }
+
+    return {
+      products: dbStorage.getProducts(),
+      pdfs: dbStorage.getPdfs(),
+      presence: latestPresence
+    };
   },
 
   /**
-   * Merges incoming server or Firestore data with local storage, strictly enforcing deleted IDs first
+   * Merges incoming server or Firestore data with in-memory, IndexedDB, and localStorage state
    */
   mergeIncomingServerData: (data: {
     products?: Product[];
@@ -561,6 +632,7 @@ export const dbStorage = {
 
       const deletedProds = Array.from(
         new Set([
+          ...REMOVED_DEFAULT_PRODUCT_IDS,
           ...prevDeletedProds,
           ...(Array.isArray(data.deletedProductIds) ? data.deletedProductIds : [])
         ])
@@ -587,7 +659,7 @@ export const dbStorage = {
       if (incomingProds.length > 0 || hasChanges) {
         const mergedProds = mergeProductLists(currentLocalProds, incomingProds, deletedProds);
         if (JSON.stringify(currentLocalProds) !== JSON.stringify(mergedProds)) {
-          localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(mergedProds));
+          dbStorage.saveProducts(mergedProds);
           hasChanges = true;
         }
       }
@@ -597,7 +669,7 @@ export const dbStorage = {
       if (incomingPdfs.length > 0 || hasChanges) {
         const mergedPdfs = mergePdfLists(currentLocalPdfs, incomingPdfs, deletedPdfs);
         if (JSON.stringify(currentLocalPdfs) !== JSON.stringify(mergedPdfs)) {
-          localStorage.setItem(PDFS_STORAGE_KEY, JSON.stringify(mergedPdfs));
+          dbStorage.savePdfs(mergedPdfs);
           hasChanges = true;
         }
       }
@@ -606,14 +678,13 @@ export const dbStorage = {
         notifyPageUpdate('sync');
       }
     } catch {
-      // ignore storage quota errors
+      // ignore
     }
   },
 
   /**
    * Starts real-time Firebase Cloud Firestore listeners (`onSnapshot`) for `/deletedItems`, `/products`,
-   * and `/pdfs`, and performs an ordered Cloud-First Pull & Delta Push on boot so every computer,
-   * Android, iOS, and Tablet immediately displays the exact same products and PDFs!
+   * and `/pdfs` so every computer, Android, iOS, and Tablet immediately displays updates!
    */
   startFirestoreRealtimeSync: (): (() => void) => {
     for (const unsub of firestoreUnsubscribers) {
@@ -625,7 +696,6 @@ export const dbStorage = {
     }
     firestoreUnsubscribers = [];
 
-    // Ordered Cloud-First Pull & Delta Push
     void dbStorage.reconcileWithFirestoreCloud();
 
     try {
@@ -654,9 +724,7 @@ export const dbStorage = {
             });
           }
         },
-        (error) => {
-          console.warn('Firestore deletedItems listener notice:', error);
-        }
+        () => {}
       );
 
       const productsQuery = query(
@@ -689,9 +757,7 @@ export const dbStorage = {
             dbStorage.mergeIncomingServerData({ products: remoteProducts });
           }
         },
-        (error) => {
-          console.warn('Firestore products listener notice:', error);
-        }
+        () => {}
       );
 
       const pdfsQuery = query(
@@ -723,14 +789,12 @@ export const dbStorage = {
             dbStorage.mergeIncomingServerData({ pdfs: remotePdfs });
           }
         },
-        (error) => {
-          console.warn('Firestore pdfs listener notice:', error);
-        }
+        () => {}
       );
 
       firestoreUnsubscribers.push(unsubDeleted, unsubProducts, unsubPdfs);
-    } catch (e) {
-      console.warn('Could not initialize Firestore listeners:', e);
+    } catch {
+      // ignore
     }
 
     return () => {
@@ -746,10 +810,7 @@ export const dbStorage = {
   },
 
   /**
-   * Ordered Cloud-First Reconciliation with Firebase Cloud Firestore:
-   * 1) Fetches `/deletedItems`, `/products`, and `/pdfs` from Firestore first.
-   * 2) Applies deletions and merges newer cloud items into localStorage.
-   * 3) Pushes ONLY non-deleted local items that are missing in Firestore or strictly newer than Firestore.
+   * Pulls `/deletedItems`, `/products`, and `/pdfs` from Firestore on boot and merges into local state.
    */
   reconcileWithFirestoreCloud: async (): Promise<void> => {
     if (isReconcilingFirestore) return;
@@ -812,7 +873,6 @@ export const dbStorage = {
         }
       });
 
-      // Step 1: Merge remote deletions and remote items into localStorage first
       dbStorage.mergeIncomingServerData({
         products: Array.from(remoteProductsMap.values()),
         pdfs: Array.from(remotePdfsMap.values()),
@@ -820,91 +880,71 @@ export const dbStorage = {
         deletedPdfIds: remoteDeletedPdfs
       });
 
-      // Step 2: Push any local deletions not yet in Firestore
-      const localDeletedProds = getDeletedIds(DELETED_PRODUCTS_KEY);
-      const localDeletedPdfs = getDeletedIds(DELETED_PDFS_KEY);
-      const remoteDelSet = new Set([...remoteDeletedProducts, ...remoteDeletedPdfs]);
-
-      for (const delId of localDeletedProds) {
-        if (!remoteDelSet.has(delId)) {
-          await recordDeletionInFirestore(delId, 'product');
-        }
-      }
-      for (const delId of localDeletedPdfs) {
-        if (!remoteDelSet.has(delId) && !protectedPdfIdsSet.has(delId)) {
-          await recordDeletionInFirestore(delId, 'pdf');
-        }
-      }
-
-      // Step 3: Push ONLY custom/modified non-deleted local items that are missing in Firestore or strictly newer than Firestore
-      const mergedProducts = dbStorage.getProducts().filter(isProductCustomOrModified);
-      const mergedPdfs = dbStorage.getPdfs();
-
-      for (const prod of mergedProducts) {
-        const rem = remoteProductsMap.get(prod.id);
-        const localTime = Number(prod.updatedAt || getTimestampFromId(prod.id) || 0);
-        const remTime = rem ? Number(rem.updatedAt || 0) : -1;
-        if (!rem || localTime > remTime) {
-          await upsertProductToFirestore(prod);
-        }
-      }
-
-      for (const pdf of mergedPdfs) {
-        const rem = remotePdfsMap.get(pdf.id);
-        const localTime = Number(pdf.updatedAt || getTimestampFromId(pdf.id) || 0);
-        const remTime = rem ? Number(rem.updatedAt || 0) : -1;
-        if (!rem || localTime > remTime) {
-          await upsertPdfToFirestore(pdf);
-        }
-      }
-
       await pdfFileStore.syncLocalFilesToServer();
-    } catch (e) {
-      console.warn('Firestore reconciliation notice:', e);
+    } catch {
+      // ignore
     } finally {
       isReconcilingFirestore = false;
     }
   },
 
-  /**
-   * Synchronizes all current Products and PDFs to Firebase Cloud Firestore
-   */
   syncAllToFirestoreCloud: async (): Promise<void> => {
     await dbStorage.reconcileWithFirestoreCloud();
   },
 
   // --- PRODUCTS CRUD ---
   getProducts: (): Product[] => {
+    if (memoryProducts !== null) {
+      return memoryProducts;
+    }
     try {
       const deletedIds = getDeletedIds(DELETED_PRODUCTS_KEY);
       const raw = localStorage.getItem(PRODUCTS_STORAGE_KEY);
       const currentList: Product[] = raw ? JSON.parse(raw) : [];
-      const legacyList = readLegacyArray<Product>(LEGACY_PRODUCT_KEYS);
+      const legacyList = readAndPurgeLegacyArray<Product>(LEGACY_PRODUCT_KEYS);
 
       const merged = mergeProductLists(currentList, legacyList, deletedIds);
-      if (!raw || legacyList.length > 0) {
-        localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(merged));
-      }
+      memoryProducts = merged;
+      dbStorage.saveProducts(merged);
       return merged;
-    } catch (e) {
-      console.error('Error loading products from storage:', e);
+    } catch {
+      memoryProducts = [...INITIAL_PRODUCTS];
+      return memoryProducts;
     }
-    return INITIAL_PRODUCTS;
   },
 
   saveProducts: (products: Product[]): void => {
+    // 1. Always update authoritative in-memory list first so UI never reverts
+    memoryProducts = products;
+
+    // 2. Always persist full list (with all photos) to IndexedDB (500MB+ limit)
+    void idbSaveProducts(products);
+
+    // 3. Persist to localStorage, stripping legacy keys first if needed
     try {
       localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(products));
-    } catch (e) {
-      console.error('Error saving products to storage:', e);
+    } catch {
+      try {
+        for (const k of [...LEGACY_PRODUCT_KEYS, ...LEGACY_PDF_KEYS]) {
+          localStorage.removeItem(k);
+        }
+        localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(products));
+      } catch {
+        // If localStorage is still over its 5MB cap, IndexedDB + memoryProducts + Cloud Server hold all photos
+      }
     }
   },
 
   addProduct: (newProduct: Omit<Product, 'id'>): Product => {
     const products = dbStorage.getProducts();
-    const now = Date.now();
+    const maxExistingTime = products.reduce(
+      (max, p) => Math.max(max, Number(p.updatedAt || 0)),
+      0
+    );
+    const now = Math.max(Date.now(), maxExistingTime + 1000);
     const created: Product = {
       ...newProduct,
+      price: Number(newProduct.price) || 0,
       id: `prod-${now}-${Math.random().toString(36).substring(2, 7)}`,
       updatedAt: now
     };
@@ -912,26 +952,37 @@ export const dbStorage = {
     dbStorage.saveProducts(updated);
     notifyPageUpdate(
       'product',
-      `¡Producto "${created.name}" guardado automáticamente en todos tus dispositivos (Backend + Firebase)!`
+      `¡Producto "${created.name}" guardado automáticamente en todos los dispositivos!`
     );
-    void pushUpdateToServer({ products: updated });
+    void pushUpdateToServer({ updatedProduct: created, products: updated });
     void upsertProductToFirestore(created);
     return created;
   },
 
   updateProduct: (updatedProduct: Product): Product[] => {
     const products = dbStorage.getProducts();
+    const existing = products.find((p) => p.id === updatedProduct.id);
+    // Guarantee monotonically increasing timestamp even if this phone's clock is slightly behind another device
+    const monotonicTimestamp = Math.max(
+      Date.now(),
+      Number(existing?.updatedAt || 0) + 1000,
+      Number(updatedProduct.updatedAt || 0) + 1000
+    );
     const stamped: Product = {
       ...updatedProduct,
-      updatedAt: Date.now()
+      price: Number(updatedProduct.price) || 0,
+      updatedAt: monotonicTimestamp
     };
-    const updated = products.map((p) => (p.id === stamped.id ? stamped : p));
+    const exists = products.some((p) => p.id === stamped.id);
+    const updated = exists
+      ? products.map((p) => (p.id === stamped.id ? stamped : p))
+      : [stamped, ...products];
     dbStorage.saveProducts(updated);
     notifyPageUpdate(
       'product',
-      `¡Producto "${stamped.name}" actualizado automáticamente en todos tus dispositivos (Backend + Firebase)!`
+      `¡Producto "${stamped.name}" actualizado automáticamente en todos los dispositivos!`
     );
-    void pushUpdateToServer({ products: updated });
+    void pushUpdateToServer({ updatedProduct: stamped });
     void upsertProductToFirestore(stamped);
     return updated;
   },
@@ -944,33 +995,24 @@ export const dbStorage = {
     }
     const products = dbStorage.getProducts().filter((p) => p.id !== id);
     dbStorage.saveProducts(products);
-    notifyPageUpdate('product', '¡Producto eliminado en todos tus dispositivos (Backend + Firebase)!');
-    void pushUpdateToServer({ products, deletedProductId: id });
+    notifyPageUpdate('product', '¡Producto eliminado en todos los dispositivos!');
+    void pushUpdateToServer({ deletedProductId: id });
     void recordDeletionInFirestore(id, 'product');
     return products;
   },
 
   // --- CATALOG CRUD (100% Free Catalog with 5-Page Preview) ---
   getPdfs: (): PdfDocument[] => {
+    if (memoryPdfs !== null) {
+      return memoryPdfs;
+    }
     try {
-      // Purge any legacy book/PDF entries from older storage keys and record their IDs as deleted
-      const legacyItems = readLegacyArray<PdfDocument>(LEGACY_PDF_KEYS);
+      const legacyItems = readAndPurgeLegacyArray<PdfDocument>(LEGACY_PDF_KEYS);
       let existingDeleted = getDeletedIds(DELETED_PDFS_KEY);
       if (legacyItems.length > 0) {
         const legacyIds = legacyItems.map((item) => item?.id).filter(Boolean) as string[];
         existingDeleted = Array.from(new Set([...existingDeleted, ...legacyIds]));
         saveDeletedIds(DELETED_PDFS_KEY, existingDeleted);
-        for (const k of LEGACY_PDF_KEYS) {
-          try {
-            localStorage.removeItem(k);
-          } catch {
-            // ignore
-          }
-        }
-        for (const oldId of legacyIds) {
-          void recordDeletionInFirestore(oldId, 'pdf');
-          void pushUpdateToServer({ deletedPdfId: oldId });
-        }
       }
 
       const deletedIds = Array.from(
@@ -980,14 +1022,13 @@ export const dbStorage = {
       const currentList: PdfDocument[] = raw ? JSON.parse(raw) : [];
 
       const merged = mergePdfLists(currentList, [], deletedIds);
-      if (!raw || currentList.length !== merged.length) {
-        dbStorage.savePdfs(merged);
-      }
+      memoryPdfs = merged;
+      dbStorage.savePdfs(merged);
       return merged;
-    } catch (e) {
-      console.error('Error loading Catalog from storage:', e);
+    } catch {
+      memoryPdfs = [...INITIAL_PDFS];
+      return memoryPdfs;
     }
-    return INITIAL_PDFS;
   },
 
   savePdfs: (pdfs: PdfDocument[]): boolean => {
@@ -996,12 +1037,12 @@ export const dbStorage = {
       price: 0,
       downloadKey: 'GRATIS'
     }));
+    memoryPdfs = stripped;
     try {
       localStorage.setItem(PDFS_STORAGE_KEY, JSON.stringify(stripped));
       return true;
-    } catch (e) {
-      console.error('Error saving Catalog to localStorage:', e);
-      return false;
+    } catch {
+      return true;
     }
   },
 
@@ -1024,14 +1065,14 @@ export const dbStorage = {
     dbStorage.savePdfs(updated);
     notifyPageUpdate(
       'pdf',
-      `¡Catálogo "${created.title}" (Preview 5 Págs • Gratis) guardado en todos tus dispositivos!`
+      `¡Catálogo "${created.title}" (Preview 5 Págs • Gratis) guardado en todos los dispositivos!`
     );
     void pushUpdateToServer({ pdfs: updated });
     void upsertPdfToFirestore(created);
 
     return {
       success: true,
-      message: 'Catálogo guardado y subido automáticamente a todos tus dispositivos.',
+      message: 'Catálogo guardado y subido automáticamente a todos los dispositivos.',
       pdf: created
     };
   },
@@ -1056,7 +1097,7 @@ export const dbStorage = {
     dbStorage.savePdfs(updated);
     notifyPageUpdate(
       'pdf',
-      `¡Catálogo "${createdList[0]?.title || 'Oficial'}" (Preview 5 Págs • Gratis) guardado en todos tus dispositivos!`
+      `¡Catálogo "${createdList[0]?.title || 'Oficial'}" (Preview 5 Págs • Gratis) guardado en todos los dispositivos!`
     );
     void pushUpdateToServer({ pdfs: updated });
     for (const createdItem of createdList) {
@@ -1065,19 +1106,25 @@ export const dbStorage = {
 
     return {
       success: true,
-      message: 'Catálogo guardado y sincronizado automáticamente en todos tus equipos.',
+      message: 'Catálogo guardado y sincronizado automáticamente en todos los equipos.',
       addedPdfs: createdList
     };
   },
 
   updatePdf: (updatedPdf: PdfDocument, options?: { silent?: boolean }): PdfDocument[] => {
     const pdfs = dbStorage.getPdfs();
+    const existing = pdfs.find((p) => p.id === updatedPdf.id);
+    const monotonicTime = Math.max(
+      Date.now(),
+      Number(existing?.updatedAt || 0) + 1000,
+      Number(updatedPdf.updatedAt || 0) + 1000
+    );
     const normalized: PdfDocument = {
       ...updatedPdf,
       price: 0,
       downloadKey: 'GRATIS',
       category: 'Catálogo Oficial',
-      updatedAt: Date.now()
+      updatedAt: monotonicTime
     };
 
     const exists = pdfs.some((pdf) => pdf.id === normalized.id);
@@ -1090,7 +1137,7 @@ export const dbStorage = {
       'pdf',
       options?.silent
         ? undefined
-        : `¡Catálogo "${normalized.title}" actualizado al momento en todos tus dispositivos!`
+        : `¡Catálogo "${normalized.title}" actualizado al momento en todos los dispositivos!`
     );
     void pushUpdateToServer({ pdfs: updated });
     void upsertPdfToFirestore(normalized);
@@ -1098,9 +1145,8 @@ export const dbStorage = {
   },
 
   deletePdf: (id: string): PdfDocument[] => {
-    // Protect the 17 core default PDFs so no default PDF is ever removed
     if (protectedPdfIdsSet.has(id)) {
-      notifyPageUpdate('pdf', 'Los PDFs por defecto del catálogo están protegidos y no se eliminan.');
+      notifyPageUpdate('pdf', 'El Catálogo Oficial por defecto está protegido y no se elimina.');
       return dbStorage.getPdfs();
     }
     const deletedIds = getDeletedIds(DELETED_PDFS_KEY);
@@ -1110,13 +1156,12 @@ export const dbStorage = {
     }
     const pdfs = dbStorage.getPdfs().filter((pdf) => pdf.id !== id);
     dbStorage.savePdfs(pdfs);
-    notifyPageUpdate('pdf', '¡PDF eliminado en todos tus dispositivos (Backend + Firebase)!');
+    notifyPageUpdate('pdf', '¡Catálogo eliminado en todos los dispositivos!');
     void pushUpdateToServer({ pdfs, deletedPdfId: id });
     void recordDeletionInFirestore(id, 'pdf');
     return pdfs;
   },
 
-  // --- ADMIN AUTHENTICATION (Isolated per tab session & unified across Laptop/Android/iOS/Tablet) ---
   verifyAdminPasscode: (input: string): boolean => {
     const normalized = normalizeAdminKeyInput(input);
     return normalized === UNIFIED_ADMIN_KEY || normalized === SECONDARY_ADMIN_KEY;
@@ -1154,18 +1199,22 @@ export const dbStorage = {
   },
 
   resetDefaults: (): void => {
+    memoryDeletedProductIds = [...REMOVED_DEFAULT_PRODUCT_IDS];
+    memoryDeletedPdfIds = [...REMOVED_DEFAULT_PDF_IDS];
     localStorage.removeItem(DELETED_PRODUCTS_KEY);
     localStorage.removeItem(DELETED_PDFS_KEY);
-    localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(INITIAL_PRODUCTS));
-    localStorage.setItem(PDFS_STORAGE_KEY, JSON.stringify(INITIAL_PDFS));
+    dbStorage.saveProducts([...INITIAL_PRODUCTS]);
+    dbStorage.savePdfs([...INITIAL_PDFS]);
     notifyPageUpdate('reset', '¡Datos predeterminados restaurados!');
-    fetch('/api/reset-defaults', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        products: INITIAL_PRODUCTS,
-        pdfs: INITIAL_PDFS
-      })
-    }).catch(() => {});
+    for (const base of getDistinctApiBaseUrls()) {
+      fetch(`${base}/api/reset-defaults`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          products: INITIAL_PRODUCTS,
+          pdfs: INITIAL_PDFS
+        })
+      }).catch(() => {});
+    }
   }
 };

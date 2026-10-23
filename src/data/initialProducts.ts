@@ -1,26 +1,69 @@
 import type { Product } from '../types/index.ts';
-import { TIJERAS_WESTCOTT_IMG, CUADERNOS_ESCOLARES_IMG, CRAYONES_CRAYOLA_IMG } from '../utils/productImages.ts';
+import { TIJERAS_WESTCOTT_IMG, CRAYONES_CRAYOLA_IMG } from '../utils/productImages.ts';
+
+export const REMOVED_DEFAULT_PRODUCT_IDS: string[] = ['school-01'];
+
+export const BAKED_STATIC_PHOTO_TIMESTAMPS: Record<string, { url: string; maxTimestamp: number }> = {
+  'prod-1792798671681-fiz5f': {
+    url: '/assets/products/prod-1792798671681-fiz5f.jpg',
+    maxTimestamp: 1792798671681
+  },
+  'prod-1792798605934-6hzdp': {
+    url: '/assets/products/prod-1792798605934-6hzdp.jpg',
+    maxTimestamp: 1792798605934
+  },
+  'p-1706': {
+    url: '/assets/products/p-1706.jpg',
+    maxTimestamp: 1792798839096
+  },
+  'p-1707': {
+    url: '/assets/products/p-1707.jpg',
+    maxTimestamp: 1792798984179
+  },
+  'p-1708': {
+    url: '/assets/products/p-1708.jpg',
+    maxTimestamp: 1792799404523
+  },
+  'p-1712': {
+    url: '/assets/products/p-1712.jpg',
+    maxTimestamp: 1792799387669
+  },
+  'p-s514': {
+    url: '/assets/products/p-s514.jpg',
+    maxTimestamp: 1792803431295
+  }
+};
 
 export const INITIAL_PRODUCTS: Product[] = [
-  // --- ARTÍCULOS ESCOLARES DE LAS IMÁGENES SUBIDAS (PRECIOS EXACTOS) ---
+  // --- ARTÍCULOS PERSONALIZADOS AGREGADOS ---
   {
-    id: 'school-01',
-    clave: 'ESC-01',
-    name: 'Folders Escolares',
-    price: 25,
-    size: '1 pza c/u',
-    category: 'Escolar y Accesorios',
-    description: 'Folders escolares resistentes en colores vivos (Morado, Amarillo, Naranja y Azul). Elige el color de tu preferencia para organizar documentos y tareas.',
-    image: CUADERNOS_ESCOLARES_IMG,
+    id: 'prod-1792798671681-fiz5f',
+    clave: 'VS8890',
+    name: 'Cremas VS',
+    price: 250,
+    size: '250 ml',
+    category: 'Cosméticos y Aromas',
+    description: 'Cremas originales Victoria secrets para cualquier tipo de ocasion',
+    image: '/assets/products/prod-1792798671681-fiz5f.jpg',
     isStarProduct: true,
-    isNew: true,
-    availableColors: [
-      { name: 'Morado', hex: '#7c3aed' },
-      { name: 'Amarillo', hex: '#facc15' },
-      { name: 'Naranja', hex: '#f97316' },
-      { name: 'Azul', hex: '#38bdf8' }
-    ]
+    isNew: false,
+    updatedAt: 1792798671681
   },
+  {
+    id: 'prod-1792798605934-6hzdp',
+    clave: 'VS8988',
+    name: 'Bodys Victoria secrets',
+    price: 250,
+    size: '250 ml',
+    category: 'Cosméticos y Aromas',
+    description: 'Body para uso casual para cualquier tipo de ocacion',
+    image: '/assets/products/prod-1792798605934-6hzdp.jpg',
+    isStarProduct: true,
+    isNew: false,
+    updatedAt: 1792798605934
+  },
+
+  // --- ARTÍCULOS ESCOLARES ---
   {
     id: 'school-02',
     clave: 'ESC-02',
@@ -77,8 +120,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     size: '250 g',
     category: 'Salud y Bienestar',
     description: 'Combinación del hongo melena de león y antocianinas del arándano. Sabor arándano. Suplemento alimenticio para claridad, enfoque y calma.',
-    image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=600&q=80',
-    isNew: true
+    image: '/assets/products/p-1706.jpg',
+    isNew: true,
+    updatedAt: 1792798839096
   },
   {
     id: 'p-1704',
@@ -98,8 +142,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     size: '250 g',
     category: 'Salud y Bienestar',
     description: 'Fórmula con pulpa de frutas deshidratadas. Molécula esencial que apoya los procesos de energía del organismo y protección antioxidante.',
-    image: 'https://images.unsplash.com/photo-1550572017-edf703cf0514?auto=format&fit=crop&w=600&q=80',
-    isStarProduct: true
+    image: '/assets/products/p-1707.jpg',
+    isStarProduct: true,
+    updatedAt: 1792798984179
   },
   {
     id: 'p-1708',
@@ -109,7 +154,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     size: '30 ml',
     category: 'Salud y Bienestar',
     description: 'Ajo blanco, ajo negro y ajo japonés reunidos para ofrecer máxima concentración que impulsa tu equilibrio interno.',
-    image: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?auto=format&fit=crop&w=600&q=80'
+    image: '/assets/products/p-1708.jpg',
+    updatedAt: 1792799404523
   },
   {
     id: 'p-1712',
@@ -119,7 +165,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     size: '20 sobres de 25 g c/u',
     category: 'Salud y Bienestar',
     description: 'Ciruelo africano y sabal en perfecta sinergia para acompañar el bienestar del hombre en cada etapa.',
-    image: 'https://images.unsplash.com/photo-1512069772995-ec65ed45afd6?auto=format&fit=crop&w=600&q=80'
+    image: '/assets/products/p-1712.jpg',
+    updatedAt: 1792799387669
   },
   {
     id: 'p-1705',
@@ -200,7 +247,8 @@ export const INITIAL_PRODUCTS: Product[] = [
     size: '30 ml',
     category: 'Salud y Bienestar',
     description: 'Pasiflora, melisa y valeriana. Tu apoyo ideal para relajarte en los días más intensos.',
-    image: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?auto=format&fit=crop&w=600&q=80'
+    image: '/assets/products/p-s514.jpg',
+    updatedAt: 1792803431295
   },
   {
     id: 'p-1623',

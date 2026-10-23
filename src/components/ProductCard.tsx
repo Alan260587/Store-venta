@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Minus, ShoppingCart, Star, Sparkles, Tag, Edit3, Trash2, Check, Palette, Camera } from 'lucide-react';
+import { Plus, Minus, ShoppingCart, Star, Sparkles, Tag, Edit3, Trash2, Check, Palette, Camera, Loader2 } from 'lucide-react';
 import { Product } from '../types';
+import { compressProductImageFile } from '../utils/imageCompressor';
 
 interface ProductCardProps {
   product: Product;
@@ -26,6 +27,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const [addedAnimation, setAddedAnimation] = useState<boolean>(false);
   const [isEditingPrice, setIsEditingPrice] = useState<boolean>(false);
   const [tempPrice, setTempPrice] = useState<string>(String(product.price));
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -46,54 +48,40 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const handleSavePrice = () => {
-    const val = parseFloat(tempPrice);
+    const cleaned = String(tempPrice).replace(/[^0-9.]/g, '');
+    const val = parseFloat(cleaned);
     if (!isNaN(val) && val > 0 && onUpdateProduct) {
-      onUpdateProduct({
-        ...product,
-        price: val
-      });
+      if (val !== product.price) {
+        onUpdateProduct({
+          ...product,
+          price: val
+        });
+      }
+    } else {
+      setTempPrice(String(product.price));
     }
     setIsEditingPrice(false);
   };
 
-  // Allows uploading/changing the product photo directly from the user's device (compressed so it saves in localStorage)
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // Allows uploading/changing the product photo directly from the user's device and syncing to all visitors
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
     if (!file || !onUpdateProduct) return;
-    e.target.value = '';
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_DIM = 520;
-        let w = img.width;
-        let h = img.height;
-        if (w > h && w > MAX_DIM) {
-          h = Math.round((h * MAX_DIM) / w);
-          w = MAX_DIM;
-        } else if (h >= w && h > MAX_DIM) {
-          w = Math.round((w * MAX_DIM) / h);
-          h = MAX_DIM;
-        }
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, w, h);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
-          onUpdateProduct({
-            ...product,
-            image: compressedDataUrl
-          });
-        }
-      };
-      if (typeof ev.target?.result === 'string') {
-        img.src = ev.target.result;
-      }
-    };
-    reader.readAsDataURL(file);
+    setIsUploadingPhoto(true);
+    try {
+      const compressedDataUrl = await compressProductImageFile(file);
+      onUpdateProduct({
+        ...product,
+        image: compressedDataUrl
+      });
+    } catch (err) {
+      console.error('Error al procesar la imagen del producto:', err);
+    } finally {
+      inputEl.value = '';
+      setIsUploadingPhoto(false);
+    }
   };
 
   const activeColorObj = product.availableColors?.find(c => c.name === selectedColor);
@@ -105,7 +93,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         ref={photoInputRef}
         type="file"
         accept="image/*"
-        onChange={handlePhotoUpload}
+        onChange={(e) => void handlePhotoUpload(e)}
         className="hidden"
       />
 
@@ -137,10 +125,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <button
             type="button"
             onClick={() => photoInputRef.current?.click()}
-            className="p-1.5 text-emerald-700 hover:text-emerald-900 rounded-lg hover:bg-emerald-50"
+            disabled={isUploadingPhoto}
+            className="px-2 py-1 text-emerald-800 hover:text-emerald-950 rounded-lg bg-emerald-50 hover:bg-emerald-100 flex items-center gap-1 text-[10px] font-bold border border-emerald-200"
             title="Cambiar foto del producto desde tu galería"
           >
-            <Camera className="w-3.5 h-3.5" />
+            {isUploadingPhoto ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+            ) : (
+              <Camera className="w-3.5 h-3.5 text-emerald-700" />
+            )}
+            <span>Foto</span>
           </button>
           <button
             type="button"
@@ -175,6 +169,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80';
           }}
         />
+        {isUploadingPhoto && (
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-20">
+            <div className="bg-white px-3 py-2 rounded-xl shadow-lg flex items-center gap-2 text-xs font-bold text-emerald-800">
+              <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+              <span>Guardando foto...</span>
+            </div>
+          </div>
+        )}
         {activeColorObj && (
           <div className="absolute bottom-2.5 right-3 z-10 bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-full shadow-sm border border-slate-200 flex items-center gap-1.5 text-[11px] font-bold text-slate-800">
             <span
@@ -254,13 +256,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   <span className="text-xs font-bold">$</span>
                   <input
                     type="number"
+                    step="0.01"
                     value={tempPrice}
                     onChange={(e) => setTempPrice(e.target.value)}
-                    className="w-16 px-1.5 py-0.5 border border-amber-500 rounded text-sm font-bold font-mono"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSavePrice();
+                      } else if (e.key === 'Escape') {
+                        setTempPrice(String(product.price));
+                        setIsEditingPrice(false);
+                      }
+                    }}
+                    onBlur={handleSavePrice}
+                    className="w-20 px-1.5 py-0.5 border-2 border-amber-500 rounded text-sm font-bold font-mono focus:outline-none"
                     autoFocus
                   />
                   <button
-                    onClick={handleSavePrice}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSavePrice();
+                    }}
                     className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700"
                     title="Guardar precio"
                   >
@@ -268,7 +285,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   </button>
                 </div>
               ) : (
-                <span className="text-xl sm:text-2xl font-bold text-emerald-700 font-mono">
+                <span
+                  onClick={() => {
+                    if (isAdmin) setIsEditingPrice(true);
+                  }}
+                  className={`text-xl sm:text-2xl font-bold text-emerald-700 font-mono ${
+                    isAdmin ? 'cursor-pointer hover:underline' : ''
+                  }`}
+                  title={isAdmin ? 'Haz clic para editar el precio' : undefined}
+                >
                   ${product.price}
                 </span>
               )}

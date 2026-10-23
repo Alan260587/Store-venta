@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
 import {
   getFirestore,
+  setLogLevel,
   collection,
   query,
   where,
@@ -15,13 +16,19 @@ import {
   deleteDoc,
   serverTimestamp
 } from 'firebase/firestore';
-import { INITIAL_PRODUCTS } from './src/data/initialProducts.ts';
+import {
+  INITIAL_PRODUCTS,
+  REMOVED_DEFAULT_PRODUCT_IDS,
+  BAKED_STATIC_PHOTO_TIMESTAMPS
+} from './src/data/initialProducts.ts';
 import {
   INITIAL_PDFS,
   PROTECTED_DEFAULT_PDF_IDS,
   REMOVED_DEFAULT_PDF_IDS,
   OFFICIAL_CATALOG_ID
 } from './src/data/initialPdfs.ts';
+
+setLogLevel('silent');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -106,24 +113,43 @@ function mergeProductsList(
   incomingList: any[],
   deletedIds: string[]
 ): { merged: any[]; changed: boolean } {
-  const deletedSet = new Set(deletedIds);
+  const deletedSet = new Set([...REMOVED_DEFAULT_PRODUCT_IDS, ...deletedIds]);
   const map = new Map<string, any>();
   let changed = false;
 
   const normalizeProd = (item: any) => {
     if (!item || !item.id) return item;
-    if (item.id === 'school-01') {
-      const def = initialProductsById.get('school-01');
-      if (def) {
-        return {
+    let normalized = { ...item };
+
+    // Upgrade baked static photos from heavy base64 to fast static .jpg asset URL
+    const baked = BAKED_STATIC_PHOTO_TIMESTAMPS[normalized.id];
+    if (
+      baked &&
+      Number(normalized.updatedAt || 0) <= baked.maxTimestamp &&
+      String(normalized.image || '').startsWith('data:')
+    ) {
+      normalized.image = baked.url;
+      changed = true;
+    }
+
+    // If this is a default product that has never been explicitly edited (no updatedAt),
+    // keep it aligned with the canonical INITIAL_PRODUCTS definition
+    const def = initialProductsById.get(normalized.id);
+    if (def && !normalized.updatedAt) {
+      if (
+        normalized.description !== def.description ||
+        normalized.name !== def.name ||
+        normalized.image !== def.image
+      ) {
+        normalized = {
           ...def,
-          ...item,
-          name: item.name === 'Cuadernos Escolares' ? def.name : (item.name || def.name),
-          availableColors: item.availableColors || def.availableColors
+          price: Number(normalized.price) || def.price
         };
+        changed = true;
       }
     }
-    return item;
+
+    return normalized;
   };
 
   for (const rawItem of existingList) {
@@ -359,83 +385,112 @@ function saveStore(store: {
 
 let serverStore = loadStore();
 
+// Prevent Firestore gRPC Write stream RESOURCE_EXHAUSTED errors while free-tier daily write quota is exhausted;
+// all state is persisted authoritatively in .data/store.json and served via /api/state, /api/update-state, and /api/sync.
+let backendFirestoreWriteQuotaReached = true;
+
+function withTimeout<T>(promise: Promise<T>, ms = 3500): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      backendFirestoreWriteQuotaReached = true;
+      reject(new Error('Firestore write timeout / quota reached'));
+    }, ms);
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 // --- BACKEND FIREBASE FIRESTORE HELPERS ---
 async function backendUpsertProductToFirestore(product: any): Promise<void> {
-  if (!backendDb || !product || !product.id) return;
+  if (!backendDb || backendFirestoreWriteQuotaReached || !product || !product.id) return;
   const docId = sanitizeDocId(product.id);
   if (!docId) return;
   try {
-    const updatedAtMs = Number(product.updatedAt || getTimestampFromId(product.id) || 1);
-    await setDoc(doc(backendDb, 'products', docId), {
-      id: docId,
-      clave: String(product.clave || 'S000').slice(0, 40),
-      name: String(product.name || 'Producto Sheló NABEL').slice(0, 200),
-      price: Math.max(0, Math.min(1000000, Number(product.price) || 0)),
-      size: String(product.size || '1 pza').slice(0, 80),
-      category: String(product.category || 'Cuidado Corporal').slice(0, 80),
-      description: String(product.description || 'Producto oficial Sheló NABEL.').slice(0, 1500),
-      image: String(product.image || 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80').slice(0, 900000),
-      isStarProduct: Boolean(product.isStarProduct),
-      isNew: Boolean(product.isNew),
-      visibility: 'public',
-      authorUid: 'shelo_backend_server',
-      adminKey: UNIFIED_ADMIN_KEY,
-      updatedAtMs,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-  } catch (err) {
-    console.warn(`Backend Firestore product upsert warning (${docId}):`, err);
+    const updatedAtMs = Number(product.updatedAt || getTimestampFromId(product.id) || Date.now());
+    await withTimeout(
+      setDoc(doc(backendDb, 'products', docId), {
+        id: docId,
+        clave: String(product.clave || 'S000').slice(0, 40),
+        name: String(product.name || 'Producto Sheló NABEL').slice(0, 200),
+        price: Math.max(0, Math.min(1000000, Number(product.price) || 0)),
+        size: String(product.size || '1 pza').slice(0, 80),
+        category: String(product.category || 'Cuidado Corporal').slice(0, 80),
+        description: String(product.description || 'Producto oficial Sheló NABEL.').slice(0, 1500),
+        image: String(product.image || 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=600&q=80').slice(0, 900000),
+        isStarProduct: Boolean(product.isStarProduct),
+        isNew: Boolean(product.isNew),
+        visibility: 'public',
+        authorUid: 'shelo_backend_server',
+        adminKey: UNIFIED_ADMIN_KEY,
+        updatedAtMs,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+  } catch {
+    backendFirestoreWriteQuotaReached = true;
   }
 }
 
 async function backendUpsertPdfToFirestore(pdf: any): Promise<void> {
-  if (!backendDb || !pdf || !pdf.id || String(pdf.id).startsWith('pdf-')) return;
+  if (!backendDb || backendFirestoreWriteQuotaReached || !pdf || !pdf.id || String(pdf.id).startsWith('pdf-')) return;
   const docId = sanitizeDocId(pdf.id);
   if (!docId) return;
   try {
-    const updatedAtMs = Number(pdf.updatedAt || getTimestampFromId(pdf.id) || 1);
-    await setDoc(doc(backendDb, 'pdfs', docId), {
-      id: docId,
-      title: String(pdf.title || 'Catálogo Oficial Sheló NABEL').slice(0, 250),
-      description: String(pdf.description || 'Catálogo Oficial Sheló NABEL (Vista previa de 5 páginas y descarga gratis).').slice(0, 1500),
-      pagesCount: Math.max(1, Math.min(5000, Number(pdf.pagesCount) || 1)),
-      price: 0,
-      downloadKey: 'GRATIS',
-      uploadedAt: String(pdf.uploadedAt || new Date().toISOString().split('T')[0]).slice(0, 40),
-      fileSize: String(pdf.fileSize || '1.0 MB').slice(0, 40),
-      category: 'Catálogo Oficial',
-      visibility: 'public',
-      authorUid: 'shelo_backend_server',
-      adminKey: UNIFIED_ADMIN_KEY,
-      updatedAtMs,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-  } catch (err) {
-    console.warn(`Backend Firestore pdf upsert warning (${docId}):`, err);
+    const updatedAtMs = Number(pdf.updatedAt || getTimestampFromId(pdf.id) || Date.now());
+    await withTimeout(
+      setDoc(doc(backendDb, 'pdfs', docId), {
+        id: docId,
+        title: String(pdf.title || 'Catálogo Oficial Sheló NABEL').slice(0, 250),
+        description: String(pdf.description || 'Catálogo Oficial Sheló NABEL (Vista previa de 5 páginas y descarga gratis).').slice(0, 1500),
+        pagesCount: Math.max(1, Math.min(5000, Number(pdf.pagesCount) || 1)),
+        price: 0,
+        downloadKey: 'GRATIS',
+        uploadedAt: String(pdf.uploadedAt || new Date().toISOString().split('T')[0]).slice(0, 40),
+        fileSize: String(pdf.fileSize || '1.0 MB').slice(0, 40),
+        category: 'Catálogo Oficial',
+        visibility: 'public',
+        authorUid: 'shelo_backend_server',
+        adminKey: UNIFIED_ADMIN_KEY,
+        updatedAtMs,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
+  } catch {
+    backendFirestoreWriteQuotaReached = true;
   }
 }
 
 async function backendRecordDeletionInFirestore(id: string, itemType: 'product' | 'pdf'): Promise<void> {
-  if (!backendDb || !id) return;
+  if (!backendDb || backendFirestoreWriteQuotaReached || !id) return;
   if (itemType === 'pdf' && protectedPdfIdsSet.has(id)) return;
   const docId = sanitizeDocId(id);
   if (!docId) return;
   try {
-    await setDoc(doc(backendDb, 'deletedItems', docId), {
-      id: docId,
-      itemType,
-      visibility: 'public',
-      authorUid: 'shelo_backend_server',
-      adminKey: UNIFIED_ADMIN_KEY,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
+    await withTimeout(
+      setDoc(doc(backendDb, 'deletedItems', docId), {
+        id: docId,
+        itemType,
+        visibility: 'public',
+        authorUid: 'shelo_backend_server',
+        adminKey: UNIFIED_ADMIN_KEY,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+    );
     const colName = itemType === 'product' ? 'products' : 'pdfs';
-    await deleteDoc(doc(backendDb, colName, docId));
+    await withTimeout(deleteDoc(doc(backendDb, colName, docId)));
   } catch {
-    // ignore
+    backendFirestoreWriteQuotaReached = true;
   }
 }
 
@@ -591,38 +646,7 @@ async function startBackendFirestoreSync() {
     saveStore(serverStore);
     broadcastState();
 
-    // 2. Push any serverStore items or deletions that are missing or newer than Firestore
-    const remoteDelSet = new Set([...remoteDeletedProducts, ...remoteDeletedPdfs]);
-    for (const delProdId of serverStore.deletedProductIds) {
-      if (!remoteDelSet.has(delProdId)) {
-        await backendRecordDeletionInFirestore(delProdId, 'product');
-      }
-    }
-    for (const delPdfId of serverStore.deletedPdfIds) {
-      if (!remoteDelSet.has(delPdfId) && !protectedPdfIdsSet.has(delPdfId)) {
-        await backendRecordDeletionInFirestore(delPdfId, 'pdf');
-      }
-    }
-
-    for (const prod of serverStore.products.filter(isProductModifiedFromDefault)) {
-      const rem = remoteProductsMap.get(prod.id);
-      const localTime = Number(prod.updatedAt || getTimestampFromId(prod.id) || 1);
-      const remTime = rem ? Number(rem.updatedAt || 0) : -1;
-      if (!rem || localTime > remTime) {
-        await backendUpsertProductToFirestore(prod);
-      }
-    }
-
-    for (const pdf of serverStore.pdfs) {
-      const rem = remotePdfsMap.get(pdf.id);
-      const localTime = Number(pdf.updatedAt || getTimestampFromId(pdf.id) || 1);
-      const remTime = rem ? Number(rem.updatedAt || 0) : -1;
-      if (!rem || localTime > remTime) {
-        await backendUpsertPdfToFirestore(pdf);
-      }
-    }
-
-    // 3. Attach real-time Firestore listeners on the backend so any cloud update immediately updates serverStore
+    // 2. Attach real-time Firestore listeners on the backend so any cloud update immediately updates serverStore
     onSnapshot(
       query(collection(backendDb, 'deletedItems'), where('visibility', '==', 'public')),
       (snap) => {
@@ -800,11 +824,18 @@ async function startServer() {
   // Start Backend <-> Firebase Cloud Firestore real-time synchronization
   void startBackendFirestoreSync();
 
-  // Prevent any browser / iOS Safari / mobile proxy caching on /api/* routes
-  app.use('/api', (_req, res, next) => {
+  // Prevent any browser / iOS Safari / mobile proxy caching on /api/* routes & allow cross-origin requests from Vercel / Shared URLs
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Pragma');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
     next();
   });
 
@@ -907,13 +938,10 @@ async function startServer() {
     });
   });
 
-  // 3. Non-destructive Sync: merges client's custom/newer PDFs & products with server store & Firestore
+  // 3. Non-destructive Sync: merges client's custom/newer PDFs & products with server store
   app.post('/api/sync', (req, res) => {
     const clientProducts = Array.isArray(req.body?.products) ? req.body.products : [];
     const clientPdfs = Array.isArray(req.body?.pdfs) ? req.body.pdfs : [];
-
-    const existingProdsById = new Map(serverStore.products.map((p: any) => [p.id, p]));
-    const existingPdfsById = new Map(serverStore.pdfs.map((p: any) => [p.id, p]));
 
     const prodResult = mergeProductsList(
       serverStore.products,
@@ -931,20 +959,6 @@ async function startServer() {
       serverStore.pdfs = pdfResult.merged;
       saveStore(serverStore);
       broadcastState();
-
-      // Push any newly merged or updated items to Firebase Firestore from backend
-      for (const p of serverStore.products) {
-        const old = existingProdsById.get(p.id);
-        if (!old || Number(p.updatedAt || 0) > Number(old.updatedAt || 0)) {
-          void backendUpsertProductToFirestore(p);
-        }
-      }
-      for (const pdf of serverStore.pdfs) {
-        const old = existingPdfsById.get(pdf.id);
-        if (!old || Number(pdf.updatedAt || 0) > Number(old.updatedAt || 0)) {
-          void backendUpsertPdfToFirestore(pdf);
-        }
-      }
     }
 
     res.json({
@@ -959,7 +973,7 @@ async function startServer() {
 
   // 4. Save/Update from Admin actions on ANY device (Laptop, Android, iOS, Tablet)
   app.post('/api/update-state', (req, res) => {
-    const { products, pdfs, deletedProductId, deletedPdfId } = req.body || {};
+    const { updatedProduct, products, pdfs, deletedProductId, deletedPdfId } = req.body || {};
 
     if (deletedProductId && !serverStore.deletedProductIds.includes(deletedProductId)) {
       serverStore.deletedProductIds.push(deletedProductId);
@@ -982,18 +996,65 @@ async function startServer() {
       void backendRecordDeletionInFirestore(deletedPdfId, 'pdf');
     }
 
-    if (Array.isArray(products)) {
+    // Fast single-product update or creation (guarantees monotonically increasing updatedAt regardless of phone clock skew)
+    if (updatedProduct && updatedProduct.id && !serverStore.deletedProductIds.includes(updatedProduct.id)) {
+      const existing = serverStore.products.find((p: any) => p.id === updatedProduct.id);
+      const monotonicTime = Math.max(
+        Date.now(),
+        Number(existing?.updatedAt || 0) + 1000,
+        Number(updatedProduct.updatedAt || 0)
+      );
+      const stampedProd = {
+        ...(existing || {}),
+        ...updatedProduct,
+        price: Number(updatedProduct.price) || 0,
+        updatedAt: monotonicTime
+      };
       const prodResult = mergeProductsList(
         serverStore.products,
-        products,
+        [stampedProd],
         serverStore.deletedProductIds
       );
       serverStore.products = prodResult.merged;
-      for (const incProd of products) {
-        if (incProd && incProd.id && !serverStore.deletedProductIds.includes(incProd.id)) {
-          void backendUpsertProductToFirestore(incProd);
+      void backendUpsertProductToFirestore(stampedProd);
+    }
+
+    if (Array.isArray(products)) {
+      const existingById = new Map<string, any>(serverStore.products.map((p: any) => [p.id, p]));
+      const stampedIncoming = products.map((incProd: any) => {
+        if (!incProd || !incProd.id) return incProd;
+        const old = existingById.get(incProd.id);
+        if (!old) {
+          return {
+            ...incProd,
+            updatedAt: Math.max(Date.now(), Number(incProd.updatedAt || 0))
+          };
         }
-      }
+        const changedFields =
+          old.price !== incProd.price ||
+          old.image !== incProd.image ||
+          old.name !== incProd.name ||
+          old.clave !== incProd.clave ||
+          old.description !== incProd.description ||
+          old.category !== incProd.category ||
+          old.size !== incProd.size ||
+          Boolean(old.isStarProduct) !== Boolean(incProd.isStarProduct) ||
+          Boolean(old.isNew) !== Boolean(incProd.isNew);
+        if (changedFields) {
+          return {
+            ...incProd,
+            updatedAt: Math.max(Date.now(), Number(old.updatedAt || 0) + 1000, Number(incProd.updatedAt || 0))
+          };
+        }
+        return incProd;
+      });
+
+      const prodResult = mergeProductsList(
+        serverStore.products,
+        stampedIncoming,
+        serverStore.deletedProductIds
+      );
+      serverStore.products = prodResult.merged;
     }
 
     if (Array.isArray(pdfs)) {

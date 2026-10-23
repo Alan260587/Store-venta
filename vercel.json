@@ -21,7 +21,11 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!assets/|.*\\..*).*)",
+      "source": "/api/:path*",
+      "destination": "https://ais-pre-avwdkmmrxvofuxvicmk6ee-42912253262.us-west2.run.app/api/:path*"
+    },
+    {
+      "source": "/((?!api/|assets/|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]

@@ -17,7 +17,8 @@ import {
   Save,
   X,
   Download,
-  Eye
+  Eye,
+  Camera
 } from 'lucide-react';
 import { Product, PdfDocument, MultiUserPresence } from '../types';
 import { countPdfPages } from '../utils/pdfParser';
@@ -30,6 +31,7 @@ import {
 import { OFFICIAL_CATALOG_ID } from '../data/initialPdfs';
 import { SHELO_LOGO_URL } from './Navbar';
 import { PdfPreviewModal } from './PdfPreviewModal';
+import { compressProductImageFile } from '../utils/imageCompressor';
 
 interface AdminPanelProps {
   products: Product[];
@@ -74,6 +76,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<string>('');
+  const [uploadingPhotoProductId, setUploadingPhotoProductId] = useState<string | null>(null);
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
   const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
   const [previewPdf, setPreviewPdf] = useState<PdfDocument | null>(null);
@@ -89,6 +92,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [inlineUploadMsg, setInlineUploadMsg] = useState<string>('');
 
   const singleFileInputRef = useRef<HTMLInputElement | null>(null);
+  const productPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const activeProductForPhotoRef = useRef<Product | null>(null);
 
   const filteredCatalogs = pdfs.filter(
     (p) =>
@@ -274,14 +279,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleSavePrice = (product: Product) => {
-    const num = parseFloat(editingPrice);
+    const cleaned = String(editingPrice).replace(/[^0-9.]/g, '');
+    const num = parseFloat(cleaned);
     if (!isNaN(num) && num > 0) {
-      onUpdateProduct({
-        ...product,
-        price: num
-      });
+      if (num !== product.price) {
+        onUpdateProduct({
+          ...product,
+          price: num
+        });
+      }
     }
     setEditingProductId(null);
+  };
+
+  const handleTriggerProductPhotoUpload = (product: Product) => {
+    activeProductForPhotoRef.current = product;
+    productPhotoInputRef.current?.click();
+  };
+
+  const handleProductPhotoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
+    const targetProd = activeProductForPhotoRef.current;
+    if (!file || !targetProd) return;
+
+    setUploadingPhotoProductId(targetProd.id);
+    try {
+      const compressedDataUrl = await compressProductImageFile(file);
+      onUpdateProduct({
+        ...targetProd,
+        image: compressedDataUrl
+      });
+    } catch (err) {
+      console.error('Error al subir foto del producto en AdminPanel:', err);
+    } finally {
+      inputEl.value = '';
+      setUploadingPhotoProductId(null);
+      activeProductForPhotoRef.current = null;
+    }
   };
 
   return (
@@ -688,10 +723,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* Tab 2: Products Management */}
         {activeTab === 'products' && (
           <div className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-800 text-base">
-                Listado de Productos en Catálogo ({filteredProducts.length})
-              </h3>
+            <input
+              ref={productPhotoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={(e) => void handleProductPhotoFileChange(e)}
+              className="hidden"
+            />
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <div>
+                <h3 className="font-bold text-slate-800 text-base">
+                  Listado de Productos en Catálogo ({filteredProducts.length})
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Haz clic en la foto o en el botón <strong>Foto</strong> para cambiar la imagen de cualquier producto, o en el precio para editarlo.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={onOpenAddProduct}
@@ -719,11 +766,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     {filteredProducts.map((prod) => (
                       <tr key={prod.id} className="hover:bg-slate-50 transition-colors">
                         <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-3">
-                          <img
-                            src={prod.image}
-                            alt={prod.name}
-                            className="w-10 h-10 object-contain rounded-lg bg-slate-50 border border-slate-200 shrink-0"
-                          />
+                          <button
+                            type="button"
+                            onClick={() => handleTriggerProductPhotoUpload(prod)}
+                            className="relative group/thumb w-11 h-11 rounded-lg bg-slate-50 border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center"
+                            title="Haz clic para cambiar la foto de este producto"
+                          >
+                            <img
+                              src={prod.image}
+                              alt={prod.name}
+                              className="w-full h-full object-contain"
+                            />
+                            <span className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
+                              <Camera className="w-4 h-4 text-white" />
+                            </span>
+                          </button>
                           <div>
                             <span>{prod.name}</span>
                             {prod.isStarProduct && (
@@ -739,15 +796,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
+                                step="0.01"
                                 value={editingPrice}
                                 onChange={(e) => setEditingPrice(e.target.value)}
-                                className="w-16 px-1.5 py-0.5 border border-emerald-500 rounded text-xs"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSavePrice(prod);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingProductId(null);
+                                  }
+                                }}
+                                onBlur={() => handleSavePrice(prod)}
+                                className="w-20 px-1.5 py-0.5 border-2 border-emerald-500 rounded text-xs focus:outline-none"
                                 autoFocus
                               />
                               <button
                                 type="button"
-                                onClick={() => handleSavePrice(prod)}
-                                className="px-1.5 py-0.5 bg-emerald-600 text-white rounded text-[10px]"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  handleSavePrice(prod);
+                                }}
+                                className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold"
                               >
                                 OK
                               </button>
@@ -760,7 +830,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                               title="Haz clic para editar precio"
                             >
                               <span>${prod.price} MXN</span>
-                              <span className="opacity-0 group-hover/price:opacity-100 text-[10px] text-slate-400">
+                              <span className="opacity-70 group-hover/price:opacity-100 text-[10px] text-emerald-600">
                                 ✎
                               </span>
                             </button>
@@ -769,14 +839,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <td className="py-3.5 px-4">{prod.size}</td>
                         <td className="py-3.5 px-4 font-medium">{prod.category}</td>
                         <td className="py-3.5 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => onDeleteProduct(prod.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"
-                            title="Borrar artículo"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="inline-flex items-center gap-1.5 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleTriggerProductPhotoUpload(prod)}
+                              disabled={uploadingPhotoProductId === prod.id}
+                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg font-bold text-[11px] inline-flex items-center gap-1"
+                              title="Subir o cambiar foto del producto"
+                            >
+                              {uploadingPhotoProductId === prod.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                              ) : (
+                                <Camera className="w-3.5 h-3.5 text-emerald-700" />
+                              )}
+                              <span>Foto</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditPrice(prod)}
+                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg font-bold text-[11px] inline-flex items-center gap-1"
+                              title="Editar precio"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                              <span>Precio</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteProduct(prod.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"
+                              title="Borrar artículo"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

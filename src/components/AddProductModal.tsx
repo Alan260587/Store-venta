@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { X, Plus, Image as ImageIcon, Tag, DollarSign, Package, AlertCircle, Upload, CheckCircle2 } from 'lucide-react';
+import { X, Plus, Image as ImageIcon, Tag, DollarSign, AlertCircle, Upload, CheckCircle2, Loader2 } from 'lucide-react';
 import { Product, ProductCategory } from '../types';
+import { compressProductImageFile } from '../utils/imageCompressor';
 
 interface AddProductModalProps {
   isOpen: boolean;
@@ -42,45 +43,29 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   const [isNew, setIsNew] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [uploadedPhotoName, setUploadedPhotoName] = useState<string>('');
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!isOpen) return null;
 
-  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handlePhotoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
     if (!file) return;
-    e.target.value = '';
-    setUploadedPhotoName(file.name);
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_DIM = 520;
-        let w = img.width;
-        let h = img.height;
-        if (w > h && w > MAX_DIM) {
-          h = Math.round((h * MAX_DIM) / w);
-          w = MAX_DIM;
-        } else if (h >= w && h > MAX_DIM) {
-          w = Math.round((w * MAX_DIM) / h);
-          h = MAX_DIM;
-        }
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, w, h);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
-          setImageUrl(compressedDataUrl);
-        }
-      };
-      if (typeof ev.target?.result === 'string') {
-        img.src = ev.target.result;
-      }
-    };
-    reader.readAsDataURL(file);
+    setUploadedPhotoName(file.name);
+    setIsProcessingPhoto(true);
+    setError('');
+    try {
+      const compressedDataUrl = await compressProductImageFile(file);
+      setImageUrl(compressedDataUrl);
+    } catch (err) {
+      console.error('Error al procesar la foto:', err);
+      setError('No se pudo leer la imagen seleccionada. Intenta con otra foto JPG o PNG.');
+    } finally {
+      inputEl.value = '';
+      setIsProcessingPhoto(false);
+    }
   };
 
   const resetForm = () => {
@@ -251,19 +236,31 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              onChange={handlePhotoFileChange}
+              onChange={(e) => void handlePhotoFileChange(e)}
               className="hidden"
             />
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-3 mb-2">
+              {imageUrl && (
+                <img
+                  src={imageUrl}
+                  alt="Vista previa"
+                  className="w-12 h-12 rounded-xl object-contain bg-slate-50 border border-emerald-200 shrink-0"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={isProcessingPhoto}
                 className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 shrink-0"
               >
-                <Upload className="w-3.5 h-3.5 text-emerald-700" />
-                <span>Subir Foto de Galería</span>
+                {isProcessingPhoto ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                )}
+                <span>{isProcessingPhoto ? 'Procesando foto...' : 'Subir Foto de Galería'}</span>
               </button>
-              {uploadedPhotoName && (
+              {uploadedPhotoName && !isProcessingPhoto && (
                 <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1 truncate">
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                   <span className="truncate">{uploadedPhotoName}</span>
