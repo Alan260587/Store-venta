@@ -14,14 +14,14 @@ import {
   MessageCircle,
   Loader2,
   BookOpen,
-  LayoutGrid
+  LayoutGrid,
+  ZoomIn
 } from 'lucide-react';
 import { PdfDocument, Product } from '../types';
 import { pdfFileStore } from '../services/pdfFileStore';
 import {
   buildEightPagePreviewBlob,
-  buildEightPreviewPagesData,
-  PreviewPageSlide
+  RenderedPdfPage
 } from '../utils/generateCatalogPdf';
 import { SHELO_LOGO_URL } from './Navbar';
 
@@ -34,6 +34,10 @@ interface PdfPreviewModalProps {
   initialMode?: 'preview8' | 'fullscreen';
   onDownload: () => void;
   isDownloading?: boolean;
+}
+
+interface PreviewPageItem extends RenderedPdfPage {
+  singlePageUrl?: string;
 }
 
 export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
@@ -56,9 +60,8 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(false);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [fullBlobUrl, setFullBlobUrl] = useState<string | null>(null);
+  const [renderedPages, setRenderedPages] = useState<PreviewPageItem[]>([]);
   const [hasCustomUploadedPdf, setHasCustomUploadedPdf] = useState<boolean>(false);
-
-  const slides: PreviewPageSlide[] = buildEightPreviewPagesData(pdf, products);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -70,6 +73,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
     let active = true;
     let createdPreviewUrl: string | null = null;
     let createdFullUrl: string | null = null;
+    const createdSinglePageUrls: string[] = [];
 
     const loadBlobs = async () => {
       setIsLoadingPdf(true);
@@ -78,17 +82,28 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
         if (!active) return;
 
         setHasCustomUploadedPdf(Boolean(uploadedBlob && uploadedBlob.size > 0));
-        const { previewBlob, fullBlob } = await buildEightPagePreviewBlob(
-          uploadedBlob,
-          pdf,
-          products
-        );
+        const { previewBlob, fullBlob, renderedPages: rawPages } =
+          await buildEightPagePreviewBlob(uploadedBlob, pdf, products);
         if (!active) return;
 
         createdPreviewUrl = URL.createObjectURL(previewBlob);
         createdFullUrl = URL.createObjectURL(fullBlob);
+
+        const pagesWithUrls: PreviewPageItem[] = rawPages.map((p) => {
+          let singlePageUrl: string | undefined;
+          if (p.singlePageBlob) {
+            singlePageUrl = URL.createObjectURL(p.singlePageBlob);
+            createdSinglePageUrls.push(singlePageUrl);
+          }
+          return {
+            ...p,
+            singlePageUrl
+          };
+        });
+
         setPreviewBlobUrl(createdPreviewUrl);
         setFullBlobUrl(createdFullUrl);
+        setRenderedPages(pagesWithUrls);
       } catch (e) {
         console.warn('Error preparing PDF preview:', e);
       } finally {
@@ -104,19 +119,26 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
       active = false;
       if (createdPreviewUrl) URL.revokeObjectURL(createdPreviewUrl);
       if (createdFullUrl) URL.revokeObjectURL(createdFullUrl);
+      for (const u of createdSinglePageUrls) {
+        URL.revokeObjectURL(u);
+      }
     };
   }, [isOpen, pdf, products, initialMode]);
 
   if (!isOpen) return null;
 
-  const activeSlide = slides.find((s) => s.pageNumber === currentPage) || slides[0];
+  const totalPreviewCount = renderedPages.length > 0 ? renderedPages.length : Math.min(8, Math.max(1, pdf.pagesCount || 8));
+  const pageNumbersList = Array.from({ length: totalPreviewCount }, (_, i) => i + 1);
+  const activePageItem =
+    renderedPages.find((p) => p.pageNumber === currentPage) || renderedPages[0];
+
   const activePdfUrl =
     viewMode === 'fullscreen' && canOpenFullPdf
       ? fullBlobUrl || previewBlobUrl
       : previewBlobUrl;
 
   const whatsappBuyUrl = `https://wa.me/526621395110?text=${encodeURIComponent(
-    `Hola Jhosie Girón, vi la vista previa de 8 páginas del PDF '${pdf.title}' y quiero adquirir mi clave de descarga por $20 MXN.`
+    `Hola Jhosie Girón, vi la vista previa de ${totalPreviewCount} páginas del PDF '${pdf.title}' y quiero adquirir mi clave de descarga por $20 MXN.`
   )}`;
 
   return (
@@ -141,7 +163,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                 <span className="bg-amber-400 text-slate-950 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                   {viewMode === 'fullscreen' && canOpenFullPdf
                     ? 'PDF Abierto en Pantalla'
-                    : 'Vista Previa de 8 Páginas'}
+                    : `Vista Previa Real (${totalPreviewCount} Páginas)`}
                 </span>
                 {isFree ? (
                   <span className="bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
@@ -154,7 +176,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                   </span>
                 ) : (
                   <span className="bg-blue-950/80 border border-amber-400/40 text-amber-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    Muestra de 8 Páginas • Completo por $20 MXN
+                    Muestra de {totalPreviewCount} Páginas • Completo por $20 MXN
                   </span>
                 )}
               </div>
@@ -181,7 +203,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                   }`}
                 >
                   <Layers className="w-3.5 h-3.5" />
-                  <span>Vista Previa (8 Págs)</span>
+                  <span>Vista Previa ({totalPreviewCount} Págs)</span>
                 </button>
                 <button
                   type="button"
@@ -238,7 +260,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
           </div>
         </div>
 
-        {/* Sub-Toolbar: 8-Page Navigation & View Switcher */}
+        {/* Sub-Toolbar: Real PDF 8-Page Navigation & View Switcher */}
         <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[11px] font-extrabold text-blue-950 uppercase mr-1">
@@ -254,7 +276,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
               }`}
             >
               <LayoutGrid className="w-3.5 h-3.5 text-amber-400" />
-              <span>Ver las 8 Páginas Seguidas</span>
+              <span>Ver las {totalPreviewCount} Páginas del PDF</span>
             </button>
 
             <button
@@ -267,7 +289,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
               }`}
             >
               <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-              <span>Página por Página (1 a 8)</span>
+              <span>Página por Página (1 a {totalPreviewCount})</span>
             </button>
 
             <button
@@ -282,8 +304,8 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
               <FileText className="w-3.5 h-3.5" />
               <span>
                 {canOpenFullPdf
-                  ? 'Visor de Archivo PDF en Pantalla'
-                  : 'Visor PDF (8 Páginas de Muestra)'}
+                  ? 'Visor de Archivo PDF Completo'
+                  : `Visor PDF (${totalPreviewCount} Páginas de Muestra)`}
               </span>
             </button>
           </div>
@@ -293,7 +315,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
             <span className="text-[11px] font-bold text-slate-600 mr-1 hidden sm:inline">
               Ir a página:
             </span>
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((pageNum) => (
+            {pageNumbersList.map((pageNum) => (
               <button
                 key={pageNum}
                 type="button"
@@ -324,7 +346,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
             <div className="h-96 flex flex-col items-center justify-center gap-3 text-slate-600">
               <Loader2 className="w-10 h-10 animate-spin text-emerald-600" />
               <p className="text-sm font-bold text-blue-950">
-                Preparando vista previa de 8 páginas del PDF...
+                Cargando las páginas reales de &ldquo;{pdf.title}&rdquo;...
               </p>
             </div>
           ) : displayFormat === 'embedded' && activePdfUrl ? (
@@ -333,15 +355,15 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                 <div className="bg-blue-950 text-amber-200 px-4 py-2 text-xs font-bold flex items-center justify-between">
                   <span>
                     {canOpenFullPdf
-                      ? `Visor PDF en Pantalla • ${pdf.title} (${hasCustomUploadedPdf ? `${pdf.pagesCount} págs` : '8 páginas'})`
-                      : `Vista Previa PDF (Primeras 8 Páginas) • ${pdf.title}`}
+                      ? `Visor PDF en Pantalla • ${pdf.title} (${hasCustomUploadedPdf ? `${pdf.pagesCount} págs` : `${totalPreviewCount} páginas`})`
+                      : `Vista Previa PDF (Primeras ${totalPreviewCount} Páginas) • ${pdf.title}`}
                   </span>
                   <button
                     type="button"
                     onClick={() => setDisplayFormat('all8')}
                     className="text-amber-300 hover:underline text-[11px]"
                   >
-                    Ver también en formato de 8 tarjetas ilustradas
+                    Ver cuadrícula de las {totalPreviewCount} páginas
                   </button>
                 </div>
                 <iframe
@@ -351,69 +373,79 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                 />
               </div>
             </div>
-          ) : displayFormat === 'single' ? (
-            /* Single Page Interactive View (Page 1..8) */
+          ) : displayFormat === 'single' && activePageItem ? (
+            /* Single Page High-Resolution View of the Real Uploaded PDF (Page 1..8) */
             <div className="max-w-4xl mx-auto">
               <div className="bg-white rounded-3xl border-2 border-amber-300 shadow-xl overflow-hidden">
-                {/* Page Header with Official Sheló NABEL Logo */}
-                <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white p-6 border-b-4 border-amber-400 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
+                {/* Page Header */}
+                <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white px-6 py-4 border-b-4 border-amber-400 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
                     <img
                       src={SHELO_LOGO_URL}
                       alt="Sheló NABEL"
-                      className="w-16 h-16 rounded-full object-cover border-2 border-amber-400 bg-white shadow-md shrink-0"
+                      className="w-12 h-12 rounded-full object-cover border-2 border-amber-400 bg-white shadow-md shrink-0"
                     />
-                    <div>
-                      <span className="inline-block bg-amber-400 text-slate-950 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase mb-1">
-                        {activeSlide.badge}
+                    <div className="min-w-0">
+                      <span className="inline-block bg-amber-400 text-slate-950 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase mb-0.5">
+                        {pdf.category || 'Documento PDF'} • Página {activePageItem.pageNumber} de {totalPreviewCount}
                       </span>
-                      <h4 className="font-serif font-extrabold text-lg sm:text-2xl text-white">
-                        {activeSlide.heading}
+                      <h4 className="font-serif font-extrabold text-base sm:text-xl text-white truncate">
+                        {pdf.title}
                       </h4>
-                      <p className="text-xs text-amber-100 mt-0.5">{activeSlide.subheading}</p>
                     </div>
                   </div>
 
-                  <div className="bg-blue-950/90 border border-amber-400/50 px-4 py-2 rounded-2xl text-center shrink-0">
-                    <span className="text-[10px] uppercase text-amber-300 font-bold block">
-                      Vista Previa
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCurrentPage((p) => (p > 1 ? p - 1 : totalPreviewCount))
+                      }
+                      className="px-3 py-1.5 rounded-xl bg-blue-950 hover:bg-blue-900 text-amber-300 border border-amber-400/50 font-bold text-xs flex items-center gap-1"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Anterior</span>
+                    </button>
+                    <span className="font-mono font-extrabold text-xs sm:text-sm text-white bg-blue-950/90 border border-amber-400/50 px-3 py-1.5 rounded-xl">
+                      Pág. {activePageItem.pageNumber} / {totalPreviewCount}
                     </span>
-                    <span className="font-mono font-extrabold text-base text-white">
-                      Página {activeSlide.pageNumber} / 8
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCurrentPage((p) => (p < totalPreviewCount ? p + 1 : 1))
+                      }
+                      className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs flex items-center gap-1"
+                    >
+                      <span>Siguiente</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
-                {/* Page Body */}
-                <div className="p-6 sm:p-8 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {activeSlide.highlights.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 flex items-start justify-between gap-3 shadow-2xs"
-                      >
-                        <div>
-                          <span className="text-[10px] font-mono font-extrabold bg-blue-950 text-amber-300 px-2 py-0.5 rounded">
-                            Clave: {item.code}
-                          </span>
-                          <h5 className="font-serif font-bold text-slate-900 text-sm sm:text-base mt-1.5">
-                            {item.name}
-                          </h5>
-                          <p className="text-xs text-slate-600 mt-0.5">{item.detail}</p>
-                        </div>
-                        <span className="font-mono font-extrabold text-sm sm:text-base text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200 shrink-0">
-                          {item.price}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                {/* Actual Rendered PDF Page Body */}
+                <div className="p-4 sm:p-6 bg-slate-200 flex items-center justify-center min-h-[60vh]">
+                  {activePageItem.imageDataUrl ? (
+                    <img
+                      src={activePageItem.imageDataUrl}
+                      alt={`Página ${activePageItem.pageNumber} de ${pdf.title}`}
+                      className="max-w-full h-auto rounded-xl shadow-2xl border border-slate-300 bg-white mx-auto"
+                    />
+                  ) : activePageItem.singlePageUrl ? (
+                    <iframe
+                      src={`${activePageItem.singlePageUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                      title={`Página ${activePageItem.pageNumber} de ${pdf.title}`}
+                      className="w-full h-[72vh] rounded-xl shadow-2xl border border-slate-300 bg-white"
+                    />
+                  ) : null}
                 </div>
 
                 {/* Page Footer & Prev/Next Controls */}
                 <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-3">
                   <button
                     type="button"
-                    onClick={() => setCurrentPage((p) => (p > 1 ? p - 1 : 8))}
+                    onClick={() =>
+                      setCurrentPage((p) => (p > 1 ? p - 1 : totalPreviewCount))
+                    }
                     className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1.5"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -421,12 +453,14 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                   </button>
 
                   <span className="text-xs text-amber-200 font-semibold text-center">
-                    {activeSlide.footerNote}
+                    {pdf.title} • Página {activePageItem.pageNumber} de {totalPreviewCount} (Total del documento: {pdf.pagesCount} págs)
                   </span>
 
                   <button
                     type="button"
-                    onClick={() => setCurrentPage((p) => (p < 8 ? p + 1 : 1))}
+                    onClick={() =>
+                      setCurrentPage((p) => (p < totalPreviewCount ? p + 1 : 1))
+                    }
                     className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs flex items-center gap-1.5"
                   >
                     <span>Siguiente Página</span>
@@ -436,14 +470,14 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
               </div>
             </div>
           ) : (
-            /* All 8 Pages Displayed Continuously so the user sees all 8 pages clearly */
-            <div className="max-w-5xl mx-auto space-y-6">
+            /* All 8 Real Pages of the Uploaded PDF Displayed Clearly */
+            <div className="max-w-6xl mx-auto space-y-6">
               <div className="bg-gradient-to-r from-amber-100 via-yellow-50 to-amber-100 border-2 border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
                   <p className="text-xs sm:text-sm font-bold text-blue-950">
-                    Estás viendo las <strong>8 Páginas de Vista Previa</strong> de{' '}
-                    <span className="underline">{pdf.title}</span> ({pdf.pagesCount} páginas totales).
+                    Estás viendo las <strong>{totalPreviewCount} primeras páginas reales</strong> del PDF{' '}
+                    <span className="underline">{pdf.title}</span> ({pdf.pagesCount} páginas totales en el documento).
                   </p>
                 </div>
                 <button
@@ -457,67 +491,76 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {slides.map((slide) => (
+                {renderedPages.map((page) => (
                   <div
-                    key={slide.pageNumber}
-                    id={`pdf-preview-page-${slide.pageNumber}`}
+                    key={page.pageNumber}
+                    id={`pdf-preview-page-${page.pageNumber}`}
                     className="bg-white rounded-2xl border-2 border-amber-300 shadow-md overflow-hidden flex flex-col justify-between hover:shadow-xl transition-shadow"
                   >
-                    {/* Slide Header */}
-                    <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white p-4 border-b-2 border-amber-400 flex items-center justify-between gap-3">
+                    {/* Real PDF Page Header */}
+                    <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white px-4 py-3 border-b-2 border-amber-400 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <img
                           src={SHELO_LOGO_URL}
                           alt="Sheló NABEL"
-                          className="w-10 h-10 rounded-full object-cover border border-amber-400 bg-white shrink-0"
+                          className="w-9 h-9 rounded-full object-cover border border-amber-400 bg-white shrink-0"
                         />
                         <div className="min-w-0">
                           <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300 block">
-                            {slide.badge}
+                            {pdf.category || 'DOCUMENTO PDF'} • PÁG. {page.pageNumber} DE {totalPreviewCount}
                           </span>
-                          <h4 className="font-serif font-bold text-sm text-white truncate">
-                            {slide.heading}
+                          <h4 className="font-serif font-bold text-xs sm:text-sm text-white truncate">
+                            {pdf.title}
                           </h4>
                         </div>
                       </div>
 
-                      <span className="bg-amber-400 text-slate-950 font-mono font-extrabold text-xs px-2.5 py-1 rounded-lg shrink-0">
-                        Pág. {slide.pageNumber}/8
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCurrentPage(page.pageNumber);
+                            setDisplayFormat('single');
+                          }}
+                          className="bg-blue-900/90 hover:bg-blue-800 text-amber-200 border border-amber-400/40 text-[11px] font-bold px-2 py-1 rounded-lg flex items-center gap-1"
+                          title="Ampliar esta página"
+                        >
+                          <ZoomIn className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Ampliar</span>
+                        </button>
+                        <span className="bg-amber-400 text-slate-950 font-mono font-extrabold text-xs px-2.5 py-1 rounded-lg">
+                          Pág. {page.pageNumber}/{totalPreviewCount}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Slide Content */}
-                    <div className="p-4 space-y-2.5 flex-1">
-                      <p className="text-[11px] text-slate-600 font-medium border-b border-amber-100 pb-2">
-                        {slide.subheading}
-                      </p>
-
-                      <div className="space-y-2">
-                        {slide.highlights.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2.5 rounded-xl bg-amber-50/50 border border-amber-200/80 flex items-center justify-between gap-2 text-xs"
-                          >
-                            <div className="min-w-0">
-                              <span className="font-bold text-blue-950 block truncate">
-                                [{item.code}] {item.name}
-                              </span>
-                              <span className="text-[11px] text-slate-500 block truncate">
-                                {item.detail}
-                              </span>
-                            </div>
-                            <span className="font-mono font-extrabold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200 shrink-0 text-[11px]">
-                              {item.price}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                    {/* Real PDF Page Image / Single-Page PDF Content */}
+                    <div
+                      onClick={() => {
+                        setCurrentPage(page.pageNumber);
+                        setDisplayFormat('single');
+                      }}
+                      className="p-3 bg-slate-100 flex items-center justify-center cursor-pointer group relative min-h-[380px]"
+                    >
+                      {page.imageDataUrl ? (
+                        <img
+                          src={page.imageDataUrl}
+                          alt={`Página ${page.pageNumber} de ${pdf.title}`}
+                          className="w-full h-auto rounded-lg shadow-md border border-slate-200 bg-white object-contain max-h-[560px]"
+                        />
+                      ) : page.singlePageUrl ? (
+                        <iframe
+                          src={`${page.singlePageUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                          title={`Página ${page.pageNumber} de ${pdf.title}`}
+                          className="w-full h-[460px] rounded-lg border border-slate-200 bg-white pointer-events-none"
+                        />
+                      ) : null}
                     </div>
 
                     {/* Slide Footer */}
                     <div className="bg-slate-900 text-amber-300 px-4 py-2 text-[10px] font-bold flex items-center justify-between">
-                      <span>Sheló NABEL • Jhosie Girón</span>
-                      <span>Página {slide.pageNumber} de 8</span>
+                      <span className="truncate max-w-[65%]">{pdf.title}</span>
+                      <span>Página {page.pageNumber} de {totalPreviewCount}</span>
                     </div>
                   </div>
                 ))}
@@ -531,7 +574,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
           <div className="flex items-center gap-2 text-xs text-slate-600">
             <Layers className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>
-              <strong>{pdf.title}</strong> • Vista previa de <strong>8 páginas</strong> disponible en pantalla.
+              <strong>{pdf.title}</strong> • Vista previa de <strong>{totalPreviewCount} páginas reales</strong> del PDF.
             </span>
           </div>
 

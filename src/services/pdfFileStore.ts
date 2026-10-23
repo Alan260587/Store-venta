@@ -31,6 +31,7 @@ const CHUNK_CHAR_SIZE = 550000; // ~550KB per Firestore document (well below 1 M
 const MAX_FIRESTORE_CHUNKS = 25; // Up to ~10MB PDF binary in Firestore chunks
 
 const syncedFirestorePdfIds = new Set<string>();
+const memoryBlobCache = new Map<string, Blob>();
 
 function sanitizeDocId(rawId: string): string {
   return String(rawId || '')
@@ -249,6 +250,7 @@ export const pdfFileStore = {
    * Called automatically when clicking "Guardar" on any PDF!
    */
   saveFile: async (pdfId: string, file: Blob): Promise<void> => {
+    memoryBlobCache.set(pdfId, file);
     try {
       const idb = await openDatabase();
       await new Promise<void>((resolve, reject) => {
@@ -295,6 +297,12 @@ export const pdfFileStore = {
   },
 
   getFileBlob: async (pdfId: string): Promise<Blob | null> => {
+    // 0. Try in-memory cache first (0ms instant response right after upload)
+    const memBlob = memoryBlobCache.get(pdfId);
+    if (memBlob && memBlob.size > 0) {
+      return memBlob;
+    }
+
     // 1. Try local IndexedDB first for instant opening
     try {
       const idb = await openDatabase();
@@ -317,34 +325,41 @@ export const pdfFileStore = {
         };
       });
       if (localBlob) {
+        memoryBlobCache.set(pdfId, localBlob);
         return localBlob;
       }
     } catch {
       // Fall through to Cloud Server and Firebase
     }
 
-    // 2. Try Cloud Server (/api/pdf-file/:id)
-    try {
-      const response = await fetch(`/api/pdf-file/${encodeURIComponent(pdfId)}`, {
-        cache: 'no-store'
-      });
-      const contentType = response.headers.get('content-type') || '';
-      if (response.ok && contentType.includes('application/pdf')) {
-        const serverBlob = await response.blob();
-        if (serverBlob.size > 0) {
-          try {
-            const idb = await openDatabase();
-            const tx = idb.transaction(STORE_NAME, 'readwrite');
-            tx.objectStore(STORE_NAME).put(serverBlob, pdfId);
-            tx.oncomplete = () => idb.close();
-          } catch {
-            // ignore
+    // 2. Try Cloud Server (/api/pdf-file/:id) with short retry in case another device is mid-upload
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(`/api/pdf-file/${encodeURIComponent(pdfId)}`, {
+          cache: 'no-store'
+        });
+        const contentType = response.headers.get('content-type') || '';
+        if (response.ok && contentType.includes('application/pdf')) {
+          const serverBlob = await response.blob();
+          if (serverBlob.size > 0) {
+            memoryBlobCache.set(pdfId, serverBlob);
+            try {
+              const idb = await openDatabase();
+              const tx = idb.transaction(STORE_NAME, 'readwrite');
+              tx.objectStore(STORE_NAME).put(serverBlob, pdfId);
+              tx.oncomplete = () => idb.close();
+            } catch {
+              // ignore
+            }
+            return serverBlob;
           }
-          return serverBlob;
         }
+      } catch {
+        // Fall through
       }
-    } catch {
-      // Fall through to static public/pdfs and Firebase Cloud Firestore chunks
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 600));
+      }
     }
 
     // 2b. Try static public/pdfs/:id.pdf (for static hosting / GitHub Pages)
@@ -356,6 +371,7 @@ export const pdfFileStore = {
       if (staticRes.ok && staticType.includes('application/pdf')) {
         const staticBlob = await staticRes.blob();
         if (staticBlob.size > 0) {
+          memoryBlobCache.set(pdfId, staticBlob);
           return staticBlob;
         }
       }
@@ -367,6 +383,7 @@ export const pdfFileStore = {
     // can download the exact PDF uploaded on another device!
     const firestoreBlob = await fetchBlobFromFirestoreChunks(pdfId);
     if (firestoreBlob && firestoreBlob.size > 0) {
+      memoryBlobCache.set(pdfId, firestoreBlob);
       // Cache locally in IndexedDB and on Cloud Server
       try {
         const idb = await openDatabase();
@@ -389,6 +406,7 @@ export const pdfFileStore = {
   },
 
   deleteFile: async (pdfId: string): Promise<void> => {
+    memoryBlobCache.delete(pdfId);
     try {
       const idb = await openDatabase();
       await new Promise<void>((resolve) => {
