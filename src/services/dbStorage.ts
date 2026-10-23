@@ -7,17 +7,19 @@ import {
 import { INITIAL_PDFS, PROTECTED_DEFAULT_PDF_IDS, REMOVED_DEFAULT_PDF_IDS } from '../data/initialPdfs';
 import { pdfFileStore } from './pdfFileStore';
 import {
+  CloudStoreSnapshot,
+  publishCloudStoreSnapshot,
+  pullLatestCloudSnapshots,
+  subscribeToCloudRealtime
+} from './cloudSyncBridge';
+import {
   db,
   auth,
   collection,
   query,
   where,
   getDocs,
-  onSnapshot,
-  doc,
-  setDoc,
-  deleteDoc,
-  serverTimestamp
+  onSnapshot
 } from '../firebase';
 
 const PRODUCTS_STORAGE_KEY = 'shelo_nabel_products_v2';
@@ -42,13 +44,6 @@ const UNIFIED_ADMIN_KEY = '1987';
 const SECONDARY_ADMIN_KEY = '2026';
 const MAX_PDF_LIMIT = 500;
 
-// Shared Cloud Backend URLs so Dev App URL, Shared App URL, Vercel, and all phones stay 100% in sync
-const CLOUD_BACKEND_ORIGINS = [
-  '', // Current origin (/api/...)
-  'https://ais-pre-avwdkmmrxvofuxvicmk6ee-42912253262.us-west2.run.app',
-  'https://ais-dev-avwdkmmrxvofuxvicmk6ee-42912253262.us-west2.run.app'
-];
-
 const initialProductsMap = new Map<string, Product>(
   INITIAL_PRODUCTS.map((p) => [p.id, p])
 );
@@ -65,18 +60,10 @@ let memoryDeletedPdfIds: string[] | null = null;
 
 let firestoreUnsubscribers: Array<() => void> = [];
 let isReconcilingFirestore = false;
-let clientFirestoreQuotaReached = false;
 let pendingServerWrites = 0;
 
 function getDistinctApiBaseUrls(): string[] {
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-  const bases: string[] = [''];
-  for (const origin of CLOUD_BACKEND_ORIGINS) {
-    if (origin && origin !== currentOrigin && !bases.includes(origin)) {
-      bases.push(origin);
-    }
-  }
-  return bases;
+  return [''];
 }
 
 // --- INDEXEDDB KV HELPERS (Unlimited Mobile Photo Storage) ---
@@ -427,9 +414,41 @@ function mergePdfLists(
   return allPdfs.slice(0, MAX_PDF_LIMIT);
 }
 
+function getNextGlobalTimestamp(): number {
+  let maxTime = Date.now();
+  const prods = memoryProducts || INITIAL_PRODUCTS;
+  for (const p of prods) {
+    const t = Math.max(Number(p.updatedAt || 0), getTimestampFromId(p.id));
+    if (t > maxTime) maxTime = t;
+  }
+  const pdfList = memoryPdfs || INITIAL_PDFS;
+  for (const c of pdfList) {
+    const t = Math.max(Number(c.updatedAt || 0), getTimestampFromId(c.id));
+    if (t > maxTime) maxTime = t;
+  }
+  return maxTime + 1000;
+}
+
+function buildCurrentCloudSnapshot(): CloudStoreSnapshot {
+  const allProducts = dbStorage.getProducts();
+  const customOrModifiedProducts = allProducts.filter(
+    (p) => Boolean(p.updatedAt) || isProductCustomOrModified(p)
+  );
+  return {
+    version: 3,
+    timestamp: getNextGlobalTimestamp(),
+    clientId: dbStorage.getSessionClientId(),
+    products: customOrModifiedProducts,
+    pdfs: dbStorage.getPdfs(),
+    deletedProductIds: getDeletedIds(DELETED_PRODUCTS_KEY),
+    deletedPdfIds: getDeletedIds(DELETED_PDFS_KEY)
+  };
+}
+
 /**
- * Push current state / updates to ALL shared Multi-User Servers (Current Origin + Shared URL + Dev URL)
- * so Laptop, Android, iOS, Tablet, and Vercel visitors all see changes immediately!
+ * Push current state / updates to BOTH:
+ * 1) Universal Real-Time Cloud Bridge (Bytebin + ntfy SSE) so Computer, Android, iPhone, Tablet, ais-dev, ais-pre, and vercel.app all update in < 300ms
+ * 2) Local Backend Server (/api/update-state)
  */
 async function pushUpdateToServer(payload: {
   updatedProduct?: Product;
@@ -440,9 +459,12 @@ async function pushUpdateToServer(payload: {
 }): Promise<void> {
   pendingServerWrites += 1;
   try {
+    const snapshot = buildCurrentCloudSnapshot();
     const bases = getDistinctApiBaseUrls();
-    await Promise.allSettled(
-      bases.map(async (base) => {
+
+    await Promise.allSettled([
+      publishCloudStoreSnapshot(snapshot),
+      ...bases.map(async (base) => {
         const res = await fetch(`${base}/api/update-state`, {
           method: 'POST',
           headers: {
@@ -464,7 +486,7 @@ async function pushUpdateToServer(payload: {
           });
         }
       })
-    );
+    ]);
   } catch {
     // Offline fallback — IndexedDB + memory state keep all changes safe
   } finally {
@@ -472,10 +494,6 @@ async function pushUpdateToServer(payload: {
   }
 }
 
-/**
- * Product, PDF, and deletion writes are persisted via the shared backend server (/api/update-state & /api/sync)
- * and IndexedDB, preventing browser-side Firestore Write stream RESOURCE_EXHAUSTED errors.
- */
 async function upsertProductToFirestore(_product: Product): Promise<void> {
   return;
 }
@@ -517,7 +535,7 @@ export const dbStorage = {
   },
 
   /**
-   * Cloud-First Server Sync across local and shared Cloud Run endpoints:
+   * Cloud-First Server Sync across Universal Cloud Bridge (Bytebin + ntfy) and local backend:
    * Skips pulling if an Admin write is currently in flight so local photo/price edits are never overwritten.
    */
   syncWithServer: async (): Promise<{
@@ -535,8 +553,26 @@ export const dbStorage = {
     await dbStorage.hydrateFromIndexedDb();
 
     let latestPresence: MultiUserPresence | undefined;
-    const bases = getDistinctApiBaseUrls();
 
+    // 1. Pull latest snapshots from Universal Cloud Bridge (works across ais-dev, ais-pre, vercel.app, Android, iOS, PC)
+    try {
+      const cloudSnapshots = await pullLatestCloudSnapshots();
+      if (pendingServerWrites === 0 && cloudSnapshots.length > 0) {
+        for (const snap of cloudSnapshots) {
+          dbStorage.mergeIncomingServerData({
+            products: snap.products,
+            pdfs: snap.pdfs,
+            deletedProductIds: snap.deletedProductIds,
+            deletedPdfIds: snap.deletedPdfIds
+          });
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Sync with same-origin backend (/api/state & /api/sync) if running on Express container
+    const bases = getDistinctApiBaseUrls();
     for (const base of bases) {
       if (pendingServerWrites > 0) break;
       try {
@@ -565,7 +601,6 @@ export const dbStorage = {
 
         if (pendingServerWrites > 0) break;
 
-        // Push any newer/custom local items to this server so all endpoints converge
         const localCustomProds = dbStorage.getProducts().filter(
           (p) => Boolean(p.updatedAt) || isProductCustomOrModified(p)
         );
@@ -618,7 +653,7 @@ export const dbStorage = {
   },
 
   /**
-   * Merges incoming server or Firestore data with in-memory, IndexedDB, and localStorage state
+   * Merges incoming server or Cloud Bridge data with in-memory, IndexedDB, and localStorage state
    */
   mergeIncomingServerData: (data: {
     products?: Product[];
@@ -683,8 +718,9 @@ export const dbStorage = {
   },
 
   /**
-   * Starts real-time Firebase Cloud Firestore listeners (`onSnapshot`) for `/deletedItems`, `/products`,
-   * and `/pdfs` so every computer, Android, iOS, and Tablet immediately displays updates!
+   * Starts real-time listeners:
+   * 1) Universal Cloud SSE Bridge (`subscribeToCloudRealtime`) for instant cross-domain / cross-phone updates (< 300ms)
+   * 2) Read-only Firestore listeners (`onSnapshot`)
    */
   startFirestoreRealtimeSync: (): (() => void) => {
     for (const unsub of firestoreUnsubscribers) {
@@ -695,6 +731,21 @@ export const dbStorage = {
       }
     }
     firestoreUnsubscribers = [];
+
+    const clientId = dbStorage.getSessionClientId();
+
+    // 1. Subscribe to Universal Real-Time Cloud Bridge (works across ais-dev, ais-pre, vercel.app, Android, iPhone, PC)
+    const unsubCloudBridge = subscribeToCloudRealtime(clientId, (snapshot) => {
+      if (pendingServerWrites === 0) {
+        dbStorage.mergeIncomingServerData({
+          products: snapshot.products,
+          pdfs: snapshot.pdfs,
+          deletedProductIds: snapshot.deletedProductIds,
+          deletedPdfIds: snapshot.deletedPdfIds
+        });
+      }
+    });
+    firestoreUnsubscribers.push(unsubCloudBridge);
 
     void dbStorage.reconcileWithFirestoreCloud();
 
@@ -810,12 +861,22 @@ export const dbStorage = {
   },
 
   /**
-   * Pulls `/deletedItems`, `/products`, and `/pdfs` from Firestore on boot and merges into local state.
+   * Pulls `/deletedItems`, `/products`, and `/pdfs` from Firestore and Universal Cloud Bridge on boot
    */
   reconcileWithFirestoreCloud: async (): Promise<void> => {
     if (isReconcilingFirestore) return;
     isReconcilingFirestore = true;
     try {
+      const cloudSnapshots = await pullLatestCloudSnapshots();
+      for (const snap of cloudSnapshots) {
+        dbStorage.mergeIncomingServerData({
+          products: snap.products,
+          pdfs: snap.pdfs,
+          deletedProductIds: snap.deletedProductIds,
+          deletedPdfIds: snap.deletedPdfIds
+        });
+      }
+
       const [delSnap, prodSnap, pdfSnap] = await Promise.all([
         getDocs(query(collection(db, 'deletedItems'), where('visibility', '==', 'public'))),
         getDocs(query(collection(db, 'products'), where('visibility', '==', 'public'))),
@@ -937,11 +998,7 @@ export const dbStorage = {
 
   addProduct: (newProduct: Omit<Product, 'id'>): Product => {
     const products = dbStorage.getProducts();
-    const maxExistingTime = products.reduce(
-      (max, p) => Math.max(max, Number(p.updatedAt || 0)),
-      0
-    );
-    const now = Math.max(Date.now(), maxExistingTime + 1000);
+    const now = getNextGlobalTimestamp();
     const created: Product = {
       ...newProduct,
       price: Number(newProduct.price) || 0,
@@ -961,13 +1018,8 @@ export const dbStorage = {
 
   updateProduct: (updatedProduct: Product): Product[] => {
     const products = dbStorage.getProducts();
-    const existing = products.find((p) => p.id === updatedProduct.id);
-    // Guarantee monotonically increasing timestamp even if this phone's clock is slightly behind another device
-    const monotonicTimestamp = Math.max(
-      Date.now(),
-      Number(existing?.updatedAt || 0) + 1000,
-      Number(updatedProduct.updatedAt || 0) + 1000
-    );
+    // Use global monotonic timestamp so even if one phone's clock was 2h ahead, every new edit on any device wins!
+    const monotonicTimestamp = getNextGlobalTimestamp();
     const stamped: Product = {
       ...updatedProduct,
       price: Number(updatedProduct.price) || 0,
@@ -980,7 +1032,7 @@ export const dbStorage = {
     dbStorage.saveProducts(updated);
     notifyPageUpdate(
       'product',
-      `¡Producto "${stamped.name}" actualizado automáticamente en todos los dispositivos!`
+      `¡Producto "${stamped.name}" actualizado al instante en todos los dispositivos!`
     );
     void pushUpdateToServer({ updatedProduct: stamped });
     void upsertProductToFirestore(stamped);
@@ -1050,7 +1102,7 @@ export const dbStorage = {
     newPdf: Omit<PdfDocument, 'id' | 'uploadedAt'>
   ): { success: boolean; message: string; pdf?: PdfDocument } => {
     const pdfs = dbStorage.getPdfs();
-    const now = Date.now();
+    const now = getNextGlobalTimestamp();
     const created: PdfDocument = {
       ...newPdf,
       price: 0,
@@ -1082,7 +1134,7 @@ export const dbStorage = {
   ): { success: boolean; message: string; addedPdfs: PdfDocument[] } => {
     const currentPdfs = dbStorage.getPdfs();
     const nowStr = new Date().toISOString().split('T')[0];
-    const baseTime = Date.now();
+    const baseTime = getNextGlobalTimestamp();
     const createdList: PdfDocument[] = newPdfsList.map((item, idx) => ({
       ...item,
       price: 0,
@@ -1113,12 +1165,7 @@ export const dbStorage = {
 
   updatePdf: (updatedPdf: PdfDocument, options?: { silent?: boolean }): PdfDocument[] => {
     const pdfs = dbStorage.getPdfs();
-    const existing = pdfs.find((p) => p.id === updatedPdf.id);
-    const monotonicTime = Math.max(
-      Date.now(),
-      Number(existing?.updatedAt || 0) + 1000,
-      Number(updatedPdf.updatedAt || 0) + 1000
-    );
+    const monotonicTime = getNextGlobalTimestamp();
     const normalized: PdfDocument = {
       ...updatedPdf,
       price: 0,

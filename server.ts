@@ -27,6 +27,11 @@ import {
   REMOVED_DEFAULT_PDF_IDS,
   OFFICIAL_CATALOG_ID
 } from './src/data/initialPdfs.ts';
+import {
+  publishCloudStoreSnapshot,
+  pullLatestCloudSnapshots,
+  type CloudStoreSnapshot
+} from './src/services/cloudSyncBridge.ts';
 
 setLogLevel('silent');
 
@@ -817,12 +822,104 @@ function broadcastState() {
   });
 }
 
+function getNextServerTimestamp(): number {
+  let maxTime = Date.now();
+  for (const p of serverStore.products) {
+    const t = Math.max(Number(p?.updatedAt || 0), getTimestampFromId(p?.id));
+    if (t > maxTime) maxTime = t;
+  }
+  for (const c of serverStore.pdfs) {
+    const t = Math.max(Number(c?.updatedAt || 0), getTimestampFromId(c?.id));
+    if (t > maxTime) maxTime = t;
+  }
+  return maxTime + 1000;
+}
+
+function buildServerCloudSnapshot(): CloudStoreSnapshot {
+  const customOrModifiedProducts = serverStore.products.filter(
+    (p: any) => Boolean(p?.updatedAt) || isProductModifiedFromDefault(p)
+  );
+  return {
+    version: 3,
+    timestamp: getNextServerTimestamp(),
+    clientId: 'shelo_express_backend',
+    products: customOrModifiedProducts,
+    pdfs: serverStore.pdfs,
+    deletedProductIds: serverStore.deletedProductIds,
+    deletedPdfIds: serverStore.deletedPdfIds
+  };
+}
+
+let isPullingCloudBridge = false;
+async function reconcileServerWithCloudBridge(seedIfEmpty = false): Promise<void> {
+  if (isPullingCloudBridge) return;
+  isPullingCloudBridge = true;
+  try {
+    const snapshots = await pullLatestCloudSnapshots();
+    if (snapshots.length === 0) {
+      if (seedIfEmpty) {
+        await publishCloudStoreSnapshot(buildServerCloudSnapshot());
+      }
+      return;
+    }
+
+    let anyChanged = false;
+    for (const snap of snapshots) {
+      if (Array.isArray(snap.deletedProductIds)) {
+        for (const delId of snap.deletedProductIds) {
+          if (delId && !serverStore.deletedProductIds.includes(delId)) {
+            serverStore.deletedProductIds.push(delId);
+            anyChanged = true;
+          }
+        }
+      }
+      if (Array.isArray(snap.deletedPdfIds)) {
+        for (const delId of snap.deletedPdfIds) {
+          if (delId && !protectedPdfIdsSet.has(delId) && !serverStore.deletedPdfIds.includes(delId)) {
+            serverStore.deletedPdfIds.push(delId);
+            anyChanged = true;
+          }
+        }
+      }
+
+      const prodRes = mergeProductsList(
+        serverStore.products,
+        Array.isArray(snap.products) ? snap.products : [],
+        serverStore.deletedProductIds
+      );
+      const pdfRes = mergePdfsList(
+        serverStore.pdfs,
+        Array.isArray(snap.pdfs) ? snap.pdfs : [],
+        serverStore.deletedPdfIds
+      );
+      if (prodRes.changed || pdfRes.changed) {
+        serverStore.products = prodRes.merged;
+        serverStore.pdfs = pdfRes.merged;
+        anyChanged = true;
+      }
+    }
+
+    if (anyChanged) {
+      saveStore(serverStore);
+      broadcastState();
+    }
+  } catch {
+    // ignore transient network errors
+  } finally {
+    isPullingCloudBridge = false;
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Start Backend <-> Firebase Cloud Firestore real-time synchronization
+  // Start Backend <-> Firebase Cloud Firestore + Universal Cloud Bridge real-time synchronization
   void startBackendFirestoreSync();
+  void reconcileServerWithCloudBridge(true);
+  setInterval(() => {
+    void reconcileServerWithCloudBridge(false);
+  }, 3500);
 
   // Prevent any browser / iOS Safari / mobile proxy caching on /api/* routes & allow cross-origin requests from Vercel / Shared URLs
   app.use('/api', (req, res, next) => {
@@ -959,6 +1056,7 @@ async function startServer() {
       serverStore.pdfs = pdfResult.merged;
       saveStore(serverStore);
       broadcastState();
+      void publishCloudStoreSnapshot(buildServerCloudSnapshot());
     }
 
     res.json({
@@ -1000,8 +1098,7 @@ async function startServer() {
     if (updatedProduct && updatedProduct.id && !serverStore.deletedProductIds.includes(updatedProduct.id)) {
       const existing = serverStore.products.find((p: any) => p.id === updatedProduct.id);
       const monotonicTime = Math.max(
-        Date.now(),
-        Number(existing?.updatedAt || 0) + 1000,
+        getNextServerTimestamp(),
         Number(updatedProduct.updatedAt || 0)
       );
       const stampedProd = {
@@ -1021,13 +1118,14 @@ async function startServer() {
 
     if (Array.isArray(products)) {
       const existingById = new Map<string, any>(serverStore.products.map((p: any) => [p.id, p]));
-      const stampedIncoming = products.map((incProd: any) => {
+      const baseNextTime = getNextServerTimestamp();
+      const stampedIncoming = products.map((incProd: any, idx: number) => {
         if (!incProd || !incProd.id) return incProd;
         const old = existingById.get(incProd.id);
         if (!old) {
           return {
             ...incProd,
-            updatedAt: Math.max(Date.now(), Number(incProd.updatedAt || 0))
+            updatedAt: Math.max(baseNextTime + idx, Number(incProd.updatedAt || 0))
           };
         }
         const changedFields =
@@ -1043,7 +1141,7 @@ async function startServer() {
         if (changedFields) {
           return {
             ...incProd,
-            updatedAt: Math.max(Date.now(), Number(old.updatedAt || 0) + 1000, Number(incProd.updatedAt || 0))
+            updatedAt: Math.max(baseNextTime + idx, Number(incProd.updatedAt || 0))
           };
         }
         return incProd;
@@ -1073,6 +1171,7 @@ async function startServer() {
 
     saveStore(serverStore);
     broadcastState();
+    void publishCloudStoreSnapshot(buildServerCloudSnapshot());
 
     res.json({
       ok: true,

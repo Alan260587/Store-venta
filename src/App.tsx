@@ -194,7 +194,7 @@ export default function App() {
       if (document.visibilityState === 'visible') {
         void performCrossDeviceSync();
       }
-    }, 4000);
+    }, 2500);
 
     return () => {
       isMounted = false;
