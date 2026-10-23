@@ -53,27 +53,6 @@ if (!fs.existsSync(PDF_FILES_DIR)) {
   fs.mkdirSync(PDF_FILES_DIR, { recursive: true });
 }
 
-// Reassemble the 148-page Official 2026 Catalog PDF from its 6 binary parts if cloned from GitHub
-try {
-  const assetsDir = path.join(__dirname, 'public', 'assets', 'aistudio');
-  const fullCatalogPath = path.join(assetsDir, 'Catalogo_Shelo_NABEL2026_fd41deed.pdf');
-  const part0Path = path.join(assetsDir, 'Catalogo_Shelo_NABEL2026_part0.bin');
-  if (!fs.existsSync(fullCatalogPath) && fs.existsSync(part0Path)) {
-    const partBuffers: Buffer[] = [];
-    for (let i = 0; i < 6; i++) {
-      const pPath = path.join(assetsDir, `Catalogo_Shelo_NABEL2026_part${i}.bin`);
-      if (fs.existsSync(pPath)) {
-        partBuffers.push(fs.readFileSync(pPath));
-      }
-    }
-    if (partBuffers.length === 6) {
-      fs.writeFileSync(fullCatalogPath, Buffer.concat(partBuffers));
-    }
-  }
-} catch (err) {
-  console.warn('Notice reassembling official catalog from parts:', err);
-}
-
 // Initialize Firebase Cloud Firestore on the Backend so Backend + Frontend + All Devices share 100% identical state
 let backendDb: ReturnType<typeof getFirestore> | null = null;
 try {
@@ -1112,17 +1091,42 @@ async function startServer() {
     const pdfId = String(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
     const dataFilePath = path.join(PDF_FILES_DIR, `${pdfId}.pdf`);
     const publicFilePath = path.join(PUBLIC_PDF_DIR, `${pdfId}.pdf`);
-    const officialAssetPath =
-      pdfId === OFFICIAL_CATALOG_ID
-        ? path.join(__dirname, 'public', 'assets', 'aistudio', 'Catalogo_Shelo_NABEL2026_fd41deed.pdf')
-        : null;
     let resolvedPath = fs.existsSync(dataFilePath)
       ? dataFilePath
       : fs.existsSync(publicFilePath)
       ? publicFilePath
-      : officialAssetPath && fs.existsSync(officialAssetPath)
-      ? officialAssetPath
       : null;
+
+    // If requesting the Official 2026 Catalog and no custom override exists, stream from the 6 binary parts in memory
+    if (!resolvedPath && pdfId === OFFICIAL_CATALOG_ID) {
+      try {
+        const assetsDir = path.join(__dirname, 'public', 'assets', 'aistudio');
+        const partBuffers: Buffer[] = [];
+        for (let i = 0; i < 6; i++) {
+          const pPath = path.join(assetsDir, `Catalogo_Shelo_NABEL2026_part${i}.bin`);
+          if (fs.existsSync(pPath)) {
+            partBuffers.push(fs.readFileSync(pPath));
+          }
+        }
+        if (partBuffers.length === 6) {
+          const fullBuf = Buffer.concat(partBuffers);
+          const rawTitle =
+            String(req.query.title || 'Catalogo_Oficial_Shelo_NABEL_2026')
+              .replace(/[^a-zA-Z0-9_\-\s]/g, '')
+              .trim()
+              .replace(/\s+/g, '_') || 'Catalogo_Oficial_Shelo_NABEL_2026';
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Length', String(fullBuf.length));
+          if (req.query.download === '1') {
+            res.setHeader('Content-Disposition', `attachment; filename="${rawTitle}.pdf"`);
+          }
+          res.send(fullBuf);
+          return;
+        }
+      } catch (err) {
+        console.warn('Error streaming official catalog from parts:', err);
+      }
+    }
 
     // If not found on local container disk, fetch from Firebase Firestore chunks and cache locally
     if (!resolvedPath) {
@@ -1132,7 +1136,6 @@ async function startServer() {
           fs.writeFileSync(dataFilePath, firestoreBuf);
           resolvedPath = dataFilePath;
         } catch {
-          // Serve directly from memory buffer if disk write fails
           const rawTitle =
             String(req.query.title || pdfId)
               .replace(/[^a-zA-Z0-9_\-\s]/g, '')
@@ -1171,18 +1174,27 @@ async function startServer() {
     const partIndex = Math.max(0, parseInt(String(req.params.partIndex || '0'), 10) || 0);
     const dataFilePath = path.join(PDF_FILES_DIR, `${pdfId}.pdf`);
     const publicFilePath = path.join(PUBLIC_PDF_DIR, `${pdfId}.pdf`);
-    const officialAssetPath =
-      pdfId === OFFICIAL_CATALOG_ID
-        ? path.join(__dirname, 'public', 'assets', 'aistudio', 'Catalogo_Shelo_NABEL2026_fd41deed.pdf')
-        : null;
 
     const resolvedPath = fs.existsSync(dataFilePath)
       ? dataFilePath
       : fs.existsSync(publicFilePath)
       ? publicFilePath
-      : officialAssetPath && fs.existsSync(officialAssetPath)
-      ? officialAssetPath
       : null;
+
+    if (!resolvedPath && pdfId === OFFICIAL_CATALOG_ID) {
+      const partFilePath = path.join(
+        __dirname,
+        'public',
+        'assets',
+        'aistudio',
+        `Catalogo_Shelo_NABEL2026_part${partIndex}.bin`
+      );
+      if (fs.existsSync(partFilePath)) {
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.sendFile(partFilePath);
+        return;
+      }
+    }
 
     if (!resolvedPath) {
       res.status(404).json({ ok: false });

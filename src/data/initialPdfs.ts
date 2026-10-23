@@ -2,7 +2,6 @@ import { PdfDocument } from '../types';
 
 export const OFFICIAL_CATALOG_ID = 'cat-shelo-nabel-2026';
 const BASE_URL = import.meta.env?.BASE_URL || '/';
-export const OFFICIAL_CATALOG_FULL_URL = `${BASE_URL}assets/aistudio/Catalogo_Shelo_NABEL2026_fd41deed.pdf`;
 export const OFFICIAL_CATALOG_PREVIEW5_URL = `${BASE_URL}assets/aistudio/Catalogo_Shelo_NABEL2026_preview5.pdf`;
 export const OFFICIAL_CATALOG_TOTAL_PARTS = 6;
 export const OFFICIAL_CATALOG_PART_URLS: string[] = Array.from(
