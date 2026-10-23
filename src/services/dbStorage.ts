@@ -19,13 +19,13 @@ import {
 } from '../firebase';
 
 const PRODUCTS_STORAGE_KEY = 'shelo_nabel_products_v2';
-const PDFS_STORAGE_KEY = 'shelo_nabel_pdfs_v2';
+const PDFS_STORAGE_KEY = 'shelo_nabel_official_catalog_v4';
 const DELETED_PRODUCTS_KEY = 'shelo_nabel_deleted_products_v1';
 const DELETED_PDFS_KEY = 'shelo_nabel_deleted_pdfs_v1';
 
-// Legacy storage keys from older versions — migrated automatically so no Laptop/Mobile/iOS/Tablet data is ever lost
+// Legacy storage keys from older versions
 const LEGACY_PRODUCT_KEYS = ['shelo_nabel_products_v1', 'shelo_nabel_products', 'products'];
-const LEGACY_PDF_KEYS = ['shelo_nabel_pdfs_v1', 'shelo_nabel_pdfs', 'pdfs'];
+const LEGACY_PDF_KEYS = ['shelo_nabel_pdfs_v2', 'shelo_nabel_pdfs_v1', 'shelo_nabel_pdfs', 'pdfs'];
 
 // Strictly isolated per-tab session keys so Admin login ONLY unlocks that specific tab
 // and automatically logs out when closing the page
@@ -256,21 +256,17 @@ function mergePdfLists(
   const map = new Map<string, PdfDocument>();
 
   const normalizePdf = (raw: PdfDocument): PdfDocument => {
-    const cleanPrice = Number(raw.price) === 0 ? 0 : 20;
-    const cleanKey =
-      typeof raw.downloadKey === 'string' && raw.downloadKey.trim().length > 0
-        ? raw.downloadKey.trim().toUpperCase()
-        : 'SN-2026';
     const { fileData, ...rest } = raw;
     return {
       ...rest,
-      price: cleanPrice,
-      downloadKey: cleanKey
+      price: 0,
+      downloadKey: 'GRATIS',
+      category: 'Catálogo Oficial'
     };
   };
 
   const processPdf = (raw: PdfDocument) => {
-    if (!raw || !raw.id || deletedSet.has(raw.id)) return;
+    if (!raw || !raw.id || deletedSet.has(raw.id) || String(raw.id).startsWith('pdf-')) return;
     const item = normalizePdf(raw);
     const existing = map.get(item.id);
     if (!existing) {
@@ -842,7 +838,7 @@ export const dbStorage = {
 
       // Step 3: Push ONLY custom/modified non-deleted local items that are missing in Firestore or strictly newer than Firestore
       const mergedProducts = dbStorage.getProducts().filter(isProductCustomOrModified);
-      const mergedPdfs = dbStorage.getPdfs().filter(isPdfCustomOrModified);
+      const mergedPdfs = dbStorage.getPdfs();
 
       for (const prod of mergedProducts) {
         const rem = remoteProductsMap.get(prod.id);
@@ -954,34 +950,57 @@ export const dbStorage = {
     return products;
   },
 
-  // --- PDFS CRUD (Up to 500 PDFs, supports Free $0 or $20 MXN + Admin Download Key) ---
+  // --- CATALOG CRUD (100% Free Catalog with 5-Page Preview) ---
   getPdfs: (): PdfDocument[] => {
     try {
+      // Purge any legacy book/PDF entries from older storage keys and record their IDs as deleted
+      const legacyItems = readLegacyArray<PdfDocument>(LEGACY_PDF_KEYS);
+      let existingDeleted = getDeletedIds(DELETED_PDFS_KEY);
+      if (legacyItems.length > 0) {
+        const legacyIds = legacyItems.map((item) => item?.id).filter(Boolean) as string[];
+        existingDeleted = Array.from(new Set([...existingDeleted, ...legacyIds]));
+        saveDeletedIds(DELETED_PDFS_KEY, existingDeleted);
+        for (const k of LEGACY_PDF_KEYS) {
+          try {
+            localStorage.removeItem(k);
+          } catch {
+            // ignore
+          }
+        }
+        for (const oldId of legacyIds) {
+          void recordDeletionInFirestore(oldId, 'pdf');
+          void pushUpdateToServer({ deletedPdfId: oldId });
+        }
+      }
+
       const deletedIds = Array.from(
-        new Set([...REMOVED_DEFAULT_PDF_IDS, ...getDeletedIds(DELETED_PDFS_KEY)])
+        new Set([...REMOVED_DEFAULT_PDF_IDS, ...existingDeleted])
       );
       const raw = localStorage.getItem(PDFS_STORAGE_KEY);
       const currentList: PdfDocument[] = raw ? JSON.parse(raw) : [];
-      const legacyList = readLegacyArray<PdfDocument>(LEGACY_PDF_KEYS);
 
-      const merged = mergePdfLists(currentList, legacyList, deletedIds);
-      if (!raw || legacyList.length > 0 || currentList.length !== merged.length) {
+      const merged = mergePdfLists(currentList, [], deletedIds);
+      if (!raw || currentList.length !== merged.length) {
         dbStorage.savePdfs(merged);
       }
       return merged;
     } catch (e) {
-      console.error('Error loading PDFs from storage:', e);
+      console.error('Error loading Catalog from storage:', e);
     }
     return INITIAL_PDFS;
   },
 
   savePdfs: (pdfs: PdfDocument[]): boolean => {
-    const stripped = pdfs.map(({ fileData, ...rest }) => rest);
+    const stripped = pdfs.map(({ fileData, ...rest }) => ({
+      ...rest,
+      price: 0,
+      downloadKey: 'GRATIS'
+    }));
     try {
       localStorage.setItem(PDFS_STORAGE_KEY, JSON.stringify(stripped));
       return true;
     } catch (e) {
-      console.error('Error saving PDFs to localStorage:', e);
+      console.error('Error saving Catalog to localStorage:', e);
       return false;
     }
   },
@@ -990,25 +1009,13 @@ export const dbStorage = {
     newPdf: Omit<PdfDocument, 'id' | 'uploadedAt'>
   ): { success: boolean; message: string; pdf?: PdfDocument } => {
     const pdfs = dbStorage.getPdfs();
-    if (pdfs.length >= MAX_PDF_LIMIT) {
-      return {
-        success: false,
-        message: `Se ha alcanzado el límite máximo de ${MAX_PDF_LIMIT} archivos PDF.`
-      };
-    }
-
-    const cleanPrice = Number(newPdf.price) === 0 ? 0 : 20;
-    const cleanKey =
-      newPdf.downloadKey && newPdf.downloadKey.trim().length > 0
-        ? newPdf.downloadKey.trim().toUpperCase()
-        : generateRandomDownloadKey();
-
     const now = Date.now();
     const created: PdfDocument = {
       ...newPdf,
-      price: cleanPrice,
-      downloadKey: cleanKey,
-      id: `pdf-${now}-${Math.random().toString(36).substring(2, 7)}`,
+      price: 0,
+      downloadKey: 'GRATIS',
+      category: 'Catálogo Oficial',
+      id: `cat-${now}-${Math.random().toString(36).substring(2, 7)}`,
       uploadedAt: new Date().toISOString().split('T')[0],
       updatedAt: now
     };
@@ -1017,60 +1024,39 @@ export const dbStorage = {
     dbStorage.savePdfs(updated);
     notifyPageUpdate(
       'pdf',
-      `¡PDF "${created.title}" guardado automáticamente en todos tus dispositivos (Backend + Firebase)!`
+      `¡Catálogo "${created.title}" (Preview 5 Págs • Gratis) guardado en todos tus dispositivos!`
     );
     void pushUpdateToServer({ pdfs: updated });
     void upsertPdfToFirestore(created);
 
     return {
       success: true,
-      message: 'PDF guardado y subido automáticamente a todos tus dispositivos.',
+      message: 'Catálogo guardado y subido automáticamente a todos tus dispositivos.',
       pdf: created
     };
   },
 
-  /**
-   * Batch addition of multiple PDFs at once (e.g., 1 to 10 PDFs)
-   * Automatically uploads all of them to the Page, Cloud Server, and Firebase on Save!
-   */
   addPdfsBatch: (
     newPdfsList: Array<Omit<PdfDocument, 'id' | 'uploadedAt'>>
   ): { success: boolean; message: string; addedPdfs: PdfDocument[] } => {
     const currentPdfs = dbStorage.getPdfs();
-    if (currentPdfs.length + newPdfsList.length > MAX_PDF_LIMIT) {
-      return {
-        success: false,
-        message: `Supera el límite máximo de ${MAX_PDF_LIMIT} archivos PDF.`,
-        addedPdfs: []
-      };
-    }
-
     const nowStr = new Date().toISOString().split('T')[0];
     const baseTime = Date.now();
-    const createdList: PdfDocument[] = newPdfsList.map((item, idx) => {
-      const cleanPrice = Number(item.price) === 0 ? 0 : 20;
-      const cleanKey =
-        item.downloadKey && item.downloadKey.trim().length > 0
-          ? item.downloadKey.trim().toUpperCase()
-          : generateRandomDownloadKey();
-
-      return {
-        ...item,
-        price: cleanPrice,
-        downloadKey: cleanKey,
-        id: `pdf-${baseTime + idx}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
-        uploadedAt: nowStr,
-        updatedAt: baseTime + idx
-      };
-    });
+    const createdList: PdfDocument[] = newPdfsList.map((item, idx) => ({
+      ...item,
+      price: 0,
+      downloadKey: 'GRATIS',
+      category: 'Catálogo Oficial',
+      id: `cat-${baseTime + idx}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
+      uploadedAt: nowStr,
+      updatedAt: baseTime + idx
+    }));
 
     const updated = [...createdList, ...currentPdfs];
     dbStorage.savePdfs(updated);
     notifyPageUpdate(
       'pdf',
-      createdList.length === 1
-        ? `¡PDF "${createdList[0].title}" guardado automáticamente en todos tus dispositivos (Backend + Firebase)!`
-        : `¡${createdList.length} PDFs guardados automáticamente en todos tus dispositivos (Backend + Firebase)!`
+      `¡Catálogo "${createdList[0]?.title || 'Oficial'}" (Preview 5 Págs • Gratis) guardado en todos tus dispositivos!`
     );
     void pushUpdateToServer({ pdfs: updated });
     for (const createdItem of createdList) {
@@ -1079,23 +1065,18 @@ export const dbStorage = {
 
     return {
       success: true,
-      message: `${createdList.length} archivos PDF guardados y sincronizados automáticamente en todos tus equipos.`,
+      message: 'Catálogo guardado y sincronizado automáticamente en todos tus equipos.',
       addedPdfs: createdList
     };
   },
 
   updatePdf: (updatedPdf: PdfDocument, options?: { silent?: boolean }): PdfDocument[] => {
     const pdfs = dbStorage.getPdfs();
-    const cleanPrice = Number(updatedPdf.price) === 0 ? 0 : 20;
-    const cleanKey =
-      updatedPdf.downloadKey && updatedPdf.downloadKey.trim().length > 0
-        ? updatedPdf.downloadKey.trim().toUpperCase()
-        : 'SN-2026';
-
     const normalized: PdfDocument = {
       ...updatedPdf,
-      price: cleanPrice,
-      downloadKey: cleanKey,
+      price: 0,
+      downloadKey: 'GRATIS',
+      category: 'Catálogo Oficial',
       updatedAt: Date.now()
     };
 
@@ -1109,7 +1090,7 @@ export const dbStorage = {
       'pdf',
       options?.silent
         ? undefined
-        : `¡PDF "${normalized.title}" actualizado al momento en todos tus dispositivos (Backend + Firebase)!`
+        : `¡Catálogo "${normalized.title}" actualizado al momento en todos tus dispositivos!`
     );
     void pushUpdateToServer({ pdfs: updated });
     void upsertPdfToFirestore(normalized);

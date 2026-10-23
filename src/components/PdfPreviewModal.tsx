@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   X,
   Download,
-  FileText,
   Eye,
   Maximize2,
   Minimize2,
@@ -10,8 +9,6 @@ import {
   ChevronRight,
   Layers,
   Sparkles,
-  ShieldCheck,
-  MessageCircle,
   Loader2,
   BookOpen,
   LayoutGrid,
@@ -20,9 +17,13 @@ import {
 import { PdfDocument, Product } from '../types';
 import { pdfFileStore } from '../services/pdfFileStore';
 import {
-  buildEightPagePreviewBlob,
+  buildFivePagePreviewBlob,
+  fetchOfficialCatalogFullBlob,
+  renderSingleCatalogPageFromBlob,
+  PREVIEW_PAGES_LIMIT,
   RenderedPdfPage
 } from '../utils/generateCatalogPdf';
+import { OFFICIAL_CATALOG_ID } from '../data/initialPdfs';
 import { SHELO_LOGO_URL } from './Navbar';
 
 interface PdfPreviewModalProps {
@@ -31,9 +32,10 @@ interface PdfPreviewModalProps {
   pdf: PdfDocument;
   products: Product[];
   isAdmin?: boolean;
-  initialMode?: 'preview8' | 'fullscreen';
+  initialMode?: 'preview5' | 'preview8' | 'fullscreen';
   onDownload: () => void;
   isDownloading?: boolean;
+  downloadProgress?: number;
 }
 
 interface PreviewPageItem extends RenderedPdfPage {
@@ -45,49 +47,60 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   onClose,
   pdf,
   products,
-  isAdmin = false,
-  initialMode = 'preview8',
+  initialMode = 'preview5',
   onDownload,
-  isDownloading = false
+  isDownloading = false,
+  downloadProgress = 0
 }) => {
-  const isFree = Number(pdf.price) === 0;
-  const canOpenFullPdf = isFree || isAdmin;
-
-  const [viewMode, setViewMode] = useState<'preview8' | 'fullscreen'>(initialMode);
-  const [isMaximized, setIsMaximized] = useState<boolean>(initialMode === 'fullscreen');
-  const [displayFormat, setDisplayFormat] = useState<'all8' | 'single' | 'embedded'>('all8');
+  const normalizedInitialMode = initialMode === 'fullscreen' ? 'fullscreen' : 'preview5';
+  const [viewMode, setViewMode] = useState<'preview5' | 'fullscreen'>(normalizedInitialMode);
+  const [isMaximized, setIsMaximized] = useState<boolean>(normalizedInitialMode === 'fullscreen');
+  const [displayFormat, setDisplayFormat] = useState<'all5' | 'single' | 'embedded'>(
+    normalizedInitialMode === 'fullscreen' ? 'embedded' : 'all5'
+  );
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(false);
-  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
-  const [fullBlobUrl, setFullBlobUrl] = useState<string | null>(null);
   const [renderedPages, setRenderedPages] = useState<PreviewPageItem[]>([]);
-  const [hasCustomUploadedPdf, setHasCustomUploadedPdf] = useState<boolean>(false);
+
+  // Full 148-page interactive reader state (works natively on Android, iOS, Tablet & Laptop without iframe cookie issues)
+  const [fullCatalogBlob, setFullCatalogBlob] = useState<Blob | null>(null);
+  const [fullCatalogLoadProgress, setFullCatalogLoadProgress] = useState<number>(0);
+  const [isLoadingFullCatalog, setIsLoadingFullCatalog] = useState<boolean>(false);
+  const [fullCatalogPageNum, setFullCatalogPageNum] = useState<number>(1);
+  const [fullCatalogTotalPages, setFullCatalogTotalPages] = useState<number>(pdf.pagesCount || 148);
+  const [fullCatalogPageImage, setFullCatalogPageImage] = useState<string | null>(null);
+  const [isRenderingFullPage, setIsRenderingFullPage] = useState<boolean>(false);
 
   useEffect(() => {
     if (!isOpen) return;
-    setViewMode(initialMode);
-    setIsMaximized(initialMode === 'fullscreen');
-    setDisplayFormat(initialMode === 'fullscreen' ? 'embedded' : 'all8');
+    const initMode = initialMode === 'fullscreen' ? 'fullscreen' : 'preview5';
+    setViewMode(initMode);
+    setIsMaximized(initMode === 'fullscreen');
+    setDisplayFormat(initMode === 'fullscreen' ? 'embedded' : 'all5');
     setCurrentPage(1);
+    setFullCatalogPageNum(1);
 
     let active = true;
-    let createdPreviewUrl: string | null = null;
-    let createdFullUrl: string | null = null;
     const createdSinglePageUrls: string[] = [];
 
-    const loadBlobs = async () => {
+    const loadPreviewBlobs = async () => {
       setIsLoadingPdf(true);
       try {
         const uploadedBlob = await pdfFileStore.getFileBlob(pdf.id);
         if (!active) return;
 
-        setHasCustomUploadedPdf(Boolean(uploadedBlob && uploadedBlob.size > 0));
-        const { previewBlob, fullBlob, renderedPages: rawPages } =
-          await buildEightPagePreviewBlob(uploadedBlob, pdf, products);
+        const { fullBlob, renderedPages: rawPages } = await buildFivePagePreviewBlob(
+          uploadedBlob,
+          pdf,
+          products
+        );
         if (!active) return;
 
-        createdPreviewUrl = URL.createObjectURL(previewBlob);
-        createdFullUrl = URL.createObjectURL(fullBlob);
+        if (uploadedBlob && uploadedBlob.size > 0) {
+          setFullCatalogBlob(uploadedBlob);
+        } else if (pdf.id !== OFFICIAL_CATALOG_ID) {
+          setFullCatalogBlob(fullBlob);
+        }
 
         const pagesWithUrls: PreviewPageItem[] = rawPages.map((p) => {
           let singlePageUrl: string | undefined;
@@ -101,11 +114,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
           };
         });
 
-        setPreviewBlobUrl(createdPreviewUrl);
-        setFullBlobUrl(createdFullUrl);
         setRenderedPages(pagesWithUrls);
       } catch (e) {
-        console.warn('Error preparing PDF preview:', e);
+        console.warn('Error preparing catalog 5-page preview:', e);
       } finally {
         if (active) {
           setIsLoadingPdf(false);
@@ -113,33 +124,96 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
       }
     };
 
-    void loadBlobs();
+    void loadPreviewBlobs();
 
     return () => {
       active = false;
-      if (createdPreviewUrl) URL.revokeObjectURL(createdPreviewUrl);
-      if (createdFullUrl) URL.revokeObjectURL(createdFullUrl);
       for (const u of createdSinglePageUrls) {
         URL.revokeObjectURL(u);
       }
     };
   }, [isOpen, pdf, products, initialMode]);
 
+  // Load full 148-page catalog Blob when user switches to 'embedded' (Ver Catálogo Completo)
+  useEffect(() => {
+    if (!isOpen || displayFormat !== 'embedded') return;
+    let active = true;
+
+    const ensureFullCatalogLoaded = async () => {
+      if (fullCatalogBlob && fullCatalogBlob.size > 0) return;
+      if (pdf.id !== OFFICIAL_CATALOG_ID) return;
+
+      setIsLoadingFullCatalog(true);
+      try {
+        const blob = await fetchOfficialCatalogFullBlob((pct) => {
+          if (active) setFullCatalogLoadProgress(pct);
+        });
+        if (active) {
+          setFullCatalogBlob(blob);
+        }
+      } catch (e) {
+        console.warn('Could not load full catalog blob:', e);
+      } finally {
+        if (active) {
+          setIsLoadingFullCatalog(false);
+        }
+      }
+    };
+
+    void ensureFullCatalogLoaded();
+    return () => {
+      active = false;
+    };
+  }, [isOpen, displayFormat, fullCatalogBlob, pdf.id]);
+
+  // Render the requested page (1..148) when browsing the Full Catalog
+  useEffect(() => {
+    if (!isOpen || displayFormat !== 'embedded') return;
+    let active = true;
+
+    // Fast path for pages 1..5 if already rendered in preview
+    const previewMatch = renderedPages.find((p) => p.pageNumber === fullCatalogPageNum);
+    if (previewMatch?.imageDataUrl && !fullCatalogBlob) {
+      setFullCatalogPageImage(previewMatch.imageDataUrl);
+      return;
+    }
+
+    if (!fullCatalogBlob) return;
+
+    const renderPage = async () => {
+      setIsRenderingFullPage(true);
+      try {
+        const res = await renderSingleCatalogPageFromBlob(fullCatalogBlob, fullCatalogPageNum);
+        if (active && res) {
+          setFullCatalogPageImage(res.imageDataUrl);
+          setFullCatalogTotalPages(res.totalPages);
+        }
+      } finally {
+        if (active) {
+          setIsRenderingFullPage(false);
+        }
+      }
+    };
+
+    void renderPage();
+    return () => {
+      active = false;
+    };
+  }, [isOpen, displayFormat, fullCatalogBlob, fullCatalogPageNum, renderedPages]);
+
   if (!isOpen) return null;
 
-  const totalPreviewCount = renderedPages.length > 0 ? renderedPages.length : Math.min(8, Math.max(1, pdf.pagesCount || 8));
+  const totalPreviewCount =
+    renderedPages.length > 0
+      ? renderedPages.length
+      : Math.min(PREVIEW_PAGES_LIMIT, Math.max(1, pdf.pagesCount || PREVIEW_PAGES_LIMIT));
   const pageNumbersList = Array.from({ length: totalPreviewCount }, (_, i) => i + 1);
   const activePageItem =
     renderedPages.find((p) => p.pageNumber === currentPage) || renderedPages[0];
 
-  const activePdfUrl =
-    viewMode === 'fullscreen' && canOpenFullPdf
-      ? fullBlobUrl || previewBlobUrl
-      : previewBlobUrl;
-
-  const whatsappBuyUrl = `https://wa.me/526621395110?text=${encodeURIComponent(
-    `Hola Jhosie Girón, vi la vista previa de ${totalPreviewCount} páginas del PDF '${pdf.title}' y quiero adquirir mi clave de descarga por $20 MXN.`
-  )}`;
+  const downloadLabel = isDownloading
+    ? `Descargando${downloadProgress > 0 ? ` (${downloadProgress}%)` : ''}...`
+    : 'Descargar Catálogo Gratis';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in">
@@ -161,24 +235,13 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="bg-amber-400 text-slate-950 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                  {viewMode === 'fullscreen' && canOpenFullPdf
-                    ? 'PDF Abierto en Pantalla'
-                    : `Vista Previa Real (${totalPreviewCount} Páginas)`}
+                  {viewMode === 'fullscreen'
+                    ? `Catálogo Completo (${fullCatalogTotalPages} Páginas)`
+                    : `Vista Previa de ${totalPreviewCount} Páginas`}
                 </span>
-                {isFree ? (
-                  <span className="bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    Gratis ($0 MXN) • Acceso Completo
-                  </span>
-                ) : isAdmin ? (
-                  <span className="bg-amber-500/30 border border-amber-300/50 text-amber-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3" />
-                    <span>Modo Admin Activo • Acceso Completo</span>
-                  </span>
-                ) : (
-                  <span className="bg-blue-950/80 border border-amber-400/40 text-amber-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    Muestra de {totalPreviewCount} Páginas • Completo por $20 MXN
-                  </span>
-                )}
+                <span className="bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  ¡100% Gratis • Descarga Directa!
+                </span>
               </div>
               <h3 className="font-serif font-extrabold text-sm sm:text-lg text-white truncate mt-0.5">
                 {pdf.title}
@@ -186,59 +249,55 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
             </div>
           </div>
 
-          {/* Right Header Controls: Switch Mode, Fullscreen Toggle, Download, Close */}
+          {/* Right Header Controls: Switch Mode, Fullscreen Toggle, Free Download, Close */}
           <div className="flex items-center gap-2 flex-wrap">
-            {canOpenFullPdf && (
-              <div className="flex items-center bg-blue-950/90 p-1 rounded-xl border border-amber-400/40">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewMode('preview8');
-                    setDisplayFormat('all8');
-                  }}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-                    viewMode === 'preview8' && displayFormat !== 'embedded'
-                      ? 'bg-amber-400 text-slate-950 shadow-xs'
-                      : 'text-amber-100 hover:text-white'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>Vista Previa ({totalPreviewCount} Págs)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewMode('fullscreen');
-                    setDisplayFormat('embedded');
-                    setIsMaximized(true);
-                  }}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-                    viewMode === 'fullscreen' && displayFormat === 'embedded'
-                      ? 'bg-emerald-500 text-slate-950 shadow-xs'
-                      : 'text-emerald-200 hover:text-white'
-                  }`}
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Abrir PDF en Pantalla</span>
-                </button>
-              </div>
-            )}
-
-            {canOpenFullPdf && (
+            <div className="flex items-center bg-blue-950/90 p-1 rounded-xl border border-amber-400/40">
               <button
                 type="button"
-                onClick={onDownload}
-                disabled={isDownloading}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-md border border-emerald-400 flex items-center gap-1.5 transition-all"
+                onClick={() => {
+                  setViewMode('preview5');
+                  setDisplayFormat('all5');
+                }}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  viewMode === 'preview5' && displayFormat !== 'embedded'
+                    ? 'bg-amber-400 text-slate-950 shadow-xs'
+                    : 'text-amber-100 hover:text-white'
+                }`}
               >
-                {isDownloading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4" />
-                )}
-                <span>Descargar PDF</span>
+                <Layers className="w-3.5 h-3.5" />
+                <span>Preview ({totalPreviewCount} Págs)</span>
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('fullscreen');
+                  setDisplayFormat('embedded');
+                  setIsMaximized(true);
+                }}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  viewMode === 'fullscreen' && displayFormat === 'embedded'
+                    ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                    : 'text-emerald-200 hover:text-white'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Ver Catálogo Completo ({fullCatalogTotalPages} Págs)</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={onDownload}
+              disabled={isDownloading}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-md border border-emerald-400 flex items-center gap-1.5 transition-all"
+            >
+              {isDownloading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              <span>{downloadLabel}</span>
+            </button>
 
             <button
               type="button"
@@ -260,7 +319,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
           </div>
         </div>
 
-        {/* Sub-Toolbar: Real PDF 8-Page Navigation & View Switcher */}
+        {/* Sub-Toolbar: Real Catalog 5-Page Navigation & View Switcher */}
         <div className="bg-amber-50 border-b border-amber-200 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[11px] font-extrabold text-blue-950 uppercase mr-1">
@@ -268,20 +327,26 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
             </span>
             <button
               type="button"
-              onClick={() => setDisplayFormat('all8')}
+              onClick={() => {
+                setViewMode('preview5');
+                setDisplayFormat('all5');
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-                displayFormat === 'all8'
+                displayFormat === 'all5'
                   ? 'bg-blue-950 text-white shadow-xs'
                   : 'bg-white text-slate-700 border border-amber-300 hover:bg-amber-100'
               }`}
             >
               <LayoutGrid className="w-3.5 h-3.5 text-amber-400" />
-              <span>Ver las {totalPreviewCount} Páginas del PDF</span>
+              <span>Ver las {totalPreviewCount} Páginas del Preview</span>
             </button>
 
             <button
               type="button"
-              onClick={() => setDisplayFormat('single')}
+              onClick={() => {
+                setViewMode('preview5');
+                setDisplayFormat('single');
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
                 displayFormat === 'single'
                   ? 'bg-blue-950 text-white shadow-xs'
@@ -294,50 +359,68 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
 
             <button
               type="button"
-              onClick={() => setDisplayFormat('embedded')}
+              onClick={() => {
+                setViewMode('fullscreen');
+                setDisplayFormat('embedded');
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
                 displayFormat === 'embedded'
                   ? 'bg-emerald-700 text-white shadow-xs'
                   : 'bg-white text-emerald-900 border border-emerald-300 hover:bg-emerald-50'
               }`}
             >
-              <FileText className="w-3.5 h-3.5" />
-              <span>
-                {canOpenFullPdf
-                  ? 'Visor de Archivo PDF Completo'
-                  : `Visor PDF (${totalPreviewCount} Páginas de Muestra)`}
-              </span>
+              <Eye className="w-3.5 h-3.5" />
+              <span>Catálogo Completo ({fullCatalogTotalPages} Páginas)</span>
             </button>
           </div>
 
-          {/* Quick 1..8 Page Number Selector */}
-          <div className="flex items-center gap-1">
-            <span className="text-[11px] font-bold text-slate-600 mr-1 hidden sm:inline">
-              Ir a página:
-            </span>
-            {pageNumbersList.map((pageNum) => (
-              <button
-                key={pageNum}
-                type="button"
-                onClick={() => {
-                  setCurrentPage(pageNum);
-                  if (displayFormat === 'all8') {
-                    const el = document.getElementById(`pdf-preview-page-${pageNum}`);
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  } else if (displayFormat === 'embedded') {
-                    setDisplayFormat('single');
+          {/* Quick 1..5 Page Number Selector */}
+          {displayFormat !== 'embedded' ? (
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] font-bold text-slate-600 mr-1 hidden sm:inline">
+                Ir a página del preview:
+              </span>
+              {pageNumbersList.map((pageNum) => (
+                <button
+                  key={pageNum}
+                  type="button"
+                  onClick={() => {
+                    setCurrentPage(pageNum);
+                    if (displayFormat === 'all5') {
+                      const el = document.getElementById(`pdf-preview-page-${pageNum}`);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                  className={`w-7 h-7 rounded-lg font-mono text-xs font-extrabold transition-all ${
+                    currentPage === pageNum
+                      ? 'bg-amber-400 text-slate-950 border-2 border-blue-950 shadow-xs'
+                      : 'bg-white text-blue-950 border border-amber-300 hover:bg-amber-100'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-blue-950">
+                Ir a página (1 - {fullCatalogTotalPages}):
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={fullCatalogTotalPages}
+                value={fullCatalogPageNum}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val)) {
+                    setFullCatalogPageNum(Math.max(1, Math.min(fullCatalogTotalPages, val)));
                   }
                 }}
-                className={`w-7 h-7 rounded-lg font-mono text-xs font-extrabold transition-all ${
-                  currentPage === pageNum
-                    ? 'bg-amber-400 text-slate-950 border-2 border-blue-950 shadow-xs'
-                    : 'bg-white text-blue-950 border border-amber-300 hover:bg-amber-100'
-                }`}
-              >
-                {pageNum}
-              </button>
-            ))}
-          </div>
+                className="w-16 px-2 py-1 rounded-lg border-2 border-amber-400 bg-white text-blue-950 font-mono text-xs font-extrabold text-center"
+              />
+            </div>
+          )}
         </div>
 
         {/* Main Content Area */}
@@ -346,35 +429,118 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
             <div className="h-96 flex flex-col items-center justify-center gap-3 text-slate-600">
               <Loader2 className="w-10 h-10 animate-spin text-emerald-600" />
               <p className="text-sm font-bold text-blue-950">
-                Cargando las páginas reales de &ldquo;{pdf.title}&rdquo;...
+                Cargando las 5 páginas de vista previa de &ldquo;{pdf.title}&rdquo;...
               </p>
             </div>
-          ) : displayFormat === 'embedded' && activePdfUrl ? (
-            <div className="flex flex-col h-full min-h-[68vh] gap-4">
-              <div className="bg-white rounded-2xl border-2 border-amber-300 shadow-lg overflow-hidden flex-1 min-h-[65vh] flex flex-col">
-                <div className="bg-blue-950 text-amber-200 px-4 py-2 text-xs font-bold flex items-center justify-between">
-                  <span>
-                    {canOpenFullPdf
-                      ? `Visor PDF en Pantalla • ${pdf.title} (${hasCustomUploadedPdf ? `${pdf.pagesCount} págs` : `${totalPreviewCount} páginas`})`
-                      : `Vista Previa PDF (Primeras ${totalPreviewCount} Páginas) • ${pdf.title}`}
-                  </span>
+          ) : displayFormat === 'embedded' ? (
+            /* Interactive 148-Page Full Catalog Viewer (works on Android, iOS, Tablet & Desktop without iframe cookie errors) */
+            <div className="max-w-4xl mx-auto">
+              <div className="bg-white rounded-3xl border-2 border-amber-300 shadow-xl overflow-hidden">
+                <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white px-6 py-4 border-b-4 border-amber-400 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={SHELO_LOGO_URL}
+                      alt="Sheló NABEL"
+                      className="w-11 h-11 rounded-full object-cover border-2 border-amber-400 bg-white shadow-md shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="inline-block bg-emerald-400 text-slate-950 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase mb-0.5">
+                        Catálogo Completo • Página {fullCatalogPageNum} de {fullCatalogTotalPages}
+                      </span>
+                      <h4 className="font-serif font-extrabold text-base sm:text-xl text-white truncate">
+                        {pdf.title}
+                      </h4>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFullCatalogPageNum((p) => (p > 1 ? p - 1 : fullCatalogTotalPages))
+                      }
+                      className="px-3 py-1.5 rounded-xl bg-blue-950 hover:bg-blue-900 text-amber-300 border border-amber-400/50 font-bold text-xs flex items-center gap-1"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Anterior</span>
+                    </button>
+                    <span className="font-mono font-extrabold text-xs sm:text-sm text-white bg-blue-950/90 border border-amber-400/50 px-3 py-1.5 rounded-xl">
+                      Pág. {fullCatalogPageNum} / {fullCatalogTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFullCatalogPageNum((p) => (p < fullCatalogTotalPages ? p + 1 : 1))
+                      }
+                      className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs flex items-center gap-1"
+                    >
+                      <span>Siguiente</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 sm:p-6 bg-slate-200 flex flex-col items-center justify-center min-h-[62vh]">
+                  {isLoadingFullCatalog ? (
+                    <div className="flex flex-col items-center gap-3 py-16 text-center">
+                      <Loader2 className="w-10 h-10 animate-spin text-emerald-600" />
+                      <p className="text-sm font-extrabold text-blue-950">
+                        Cargando las {fullCatalogTotalPages} páginas del Catálogo Oficial ({fullCatalogLoadProgress}%)...
+                      </p>
+                      <div className="w-64 h-2.5 bg-slate-300 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-600 transition-all duration-200"
+                          style={{ width: `${Math.max(8, fullCatalogLoadProgress)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : isRenderingFullPage ? (
+                    <div className="flex flex-col items-center gap-2 py-16">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-900" />
+                      <p className="text-xs font-bold text-slate-700">
+                        Renderizando página {fullCatalogPageNum} de {fullCatalogTotalPages}...
+                      </p>
+                    </div>
+                  ) : fullCatalogPageImage ? (
+                    <img
+                      src={fullCatalogPageImage}
+                      alt={`Página ${fullCatalogPageNum} de ${pdf.title}`}
+                      className="max-w-full h-auto rounded-xl shadow-2xl border border-slate-300 bg-white mx-auto"
+                    />
+                  ) : null}
+                </div>
+
+                <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-3">
                   <button
                     type="button"
-                    onClick={() => setDisplayFormat('all8')}
-                    className="text-amber-300 hover:underline text-[11px]"
+                    onClick={() =>
+                      setFullCatalogPageNum((p) => (p > 1 ? p - 1 : fullCatalogTotalPages))
+                    }
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1.5"
                   >
-                    Ver cuadrícula de las {totalPreviewCount} páginas
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Página Anterior</span>
+                  </button>
+
+                  <span className="text-xs text-amber-200 font-semibold text-center">
+                    {pdf.title} • Página {fullCatalogPageNum} de {fullCatalogTotalPages}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFullCatalogPageNum((p) => (p < fullCatalogTotalPages ? p + 1 : 1))
+                    }
+                    className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs flex items-center gap-1.5"
+                  >
+                    <span>Siguiente Página</span>
+                    <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
-                <iframe
-                  src={`${activePdfUrl}#toolbar=1&navpanes=1&scrollbar=1`}
-                  title={pdf.title}
-                  className="w-full flex-1 min-h-[62vh] border-0 bg-slate-800"
-                />
               </div>
             </div>
           ) : displayFormat === 'single' && activePageItem ? (
-            /* Single Page High-Resolution View of the Real Uploaded PDF (Page 1..8) */
+            /* Single Page High-Resolution View of the Real Uploaded Catalog (Page 1..5) */
             <div className="max-w-4xl mx-auto">
               <div className="bg-white rounded-3xl border-2 border-amber-300 shadow-xl overflow-hidden">
                 {/* Page Header */}
@@ -387,7 +553,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                     />
                     <div className="min-w-0">
                       <span className="inline-block bg-amber-400 text-slate-950 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase mb-0.5">
-                        {pdf.category || 'Documento PDF'} • Página {activePageItem.pageNumber} de {totalPreviewCount}
+                        Catálogo Oficial • Página {activePageItem.pageNumber} de {totalPreviewCount}
                       </span>
                       <h4 className="font-serif font-extrabold text-base sm:text-xl text-white truncate">
                         {pdf.title}
@@ -422,19 +588,13 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                   </div>
                 </div>
 
-                {/* Actual Rendered PDF Page Body */}
+                {/* Actual Rendered Catalog Page Body */}
                 <div className="p-4 sm:p-6 bg-slate-200 flex items-center justify-center min-h-[60vh]">
                   {activePageItem.imageDataUrl ? (
                     <img
                       src={activePageItem.imageDataUrl}
                       alt={`Página ${activePageItem.pageNumber} de ${pdf.title}`}
                       className="max-w-full h-auto rounded-xl shadow-2xl border border-slate-300 bg-white mx-auto"
-                    />
-                  ) : activePageItem.singlePageUrl ? (
-                    <iframe
-                      src={`${activePageItem.singlePageUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-                      title={`Página ${activePageItem.pageNumber} de ${pdf.title}`}
-                      className="w-full h-[72vh] rounded-xl shadow-2xl border border-slate-300 bg-white"
                     />
                   ) : null}
                 </div>
@@ -453,7 +613,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                   </button>
 
                   <span className="text-xs text-amber-200 font-semibold text-center">
-                    {pdf.title} • Página {activePageItem.pageNumber} de {totalPreviewCount} (Total del documento: {pdf.pagesCount} págs)
+                    {pdf.title} • Vista Previa Página {activePageItem.pageNumber} de {totalPreviewCount} (Total del catálogo: {pdf.pagesCount} págs)
                   </span>
 
                   <button
@@ -470,23 +630,28 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
               </div>
             </div>
           ) : (
-            /* All 8 Real Pages of the Uploaded PDF Displayed Clearly */
+            /* All 5 Real Pages of the Uploaded Catalog Displayed Clearly */
             <div className="max-w-6xl mx-auto space-y-6">
               <div className="bg-gradient-to-r from-amber-100 via-yellow-50 to-amber-100 border-2 border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
                   <p className="text-xs sm:text-sm font-bold text-blue-950">
-                    Estás viendo las <strong>{totalPreviewCount} primeras páginas reales</strong> del PDF{' '}
-                    <span className="underline">{pdf.title}</span> ({pdf.pagesCount} páginas totales en el documento).
+                    Vista Previa de las <strong>{totalPreviewCount} primeras páginas reales</strong> del{' '}
+                    <span className="underline">{pdf.title}</span> ({pdf.pagesCount} páginas totales • Descarga 100% Gratis).
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setDisplayFormat('embedded')}
-                  className="px-3.5 py-2 rounded-xl bg-blue-950 hover:bg-blue-900 text-amber-300 font-extrabold text-xs shrink-0 flex items-center gap-1.5 shadow-xs"
+                  onClick={onDownload}
+                  disabled={isDownloading}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shrink-0 flex items-center gap-1.5 shadow-sm"
                 >
-                  <Eye className="w-4 h-4" />
-                  <span>Abrir en Visor PDF Nativo</span>
+                  {isDownloading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{downloadLabel}</span>
                 </button>
               </div>
 
@@ -497,7 +662,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                     id={`pdf-preview-page-${page.pageNumber}`}
                     className="bg-white rounded-2xl border-2 border-amber-300 shadow-md overflow-hidden flex flex-col justify-between hover:shadow-xl transition-shadow"
                   >
-                    {/* Real PDF Page Header */}
+                    {/* Real Catalog Page Header */}
                     <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white px-4 py-3 border-b-2 border-amber-400 flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <img
@@ -507,7 +672,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                         />
                         <div className="min-w-0">
                           <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300 block">
-                            {pdf.category || 'DOCUMENTO PDF'} • PÁG. {page.pageNumber} DE {totalPreviewCount}
+                            CATÁLOGO OFICIAL • PÁG. {page.pageNumber} DE {totalPreviewCount}
                           </span>
                           <h4 className="font-serif font-bold text-xs sm:text-sm text-white truncate">
                             {pdf.title}
@@ -534,7 +699,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Real PDF Page Image / Single-Page PDF Content */}
+                    {/* Real Catalog Page Image */}
                     <div
                       onClick={() => {
                         setCurrentPage(page.pageNumber);
@@ -548,19 +713,13 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
                           alt={`Página ${page.pageNumber} de ${pdf.title}`}
                           className="w-full h-auto rounded-lg shadow-md border border-slate-200 bg-white object-contain max-h-[560px]"
                         />
-                      ) : page.singlePageUrl ? (
-                        <iframe
-                          src={`${page.singlePageUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-                          title={`Página ${page.pageNumber} de ${pdf.title}`}
-                          className="w-full h-[460px] rounded-lg border border-slate-200 bg-white pointer-events-none"
-                        />
                       ) : null}
                     </div>
 
                     {/* Slide Footer */}
                     <div className="bg-slate-900 text-amber-300 px-4 py-2 text-[10px] font-bold flex items-center justify-between">
                       <span className="truncate max-w-[65%]">{pdf.title}</span>
-                      <span>Página {page.pageNumber} de {totalPreviewCount}</span>
+                      <span>Vista Previa Pág. {page.pageNumber} de {totalPreviewCount}</span>
                     </div>
                   </div>
                 ))}
@@ -574,55 +733,39 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
           <div className="flex items-center gap-2 text-xs text-slate-600">
             <Layers className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>
-              <strong>{pdf.title}</strong> • Vista previa de <strong>{totalPreviewCount} páginas reales</strong> del PDF.
+              <strong>{pdf.title}</strong> • Vista previa de <strong>{totalPreviewCount} páginas</strong> y descarga 100% gratis.
             </span>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
-            {canOpenFullPdf ? (
-              <>
-                {displayFormat !== 'embedded' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewMode('fullscreen');
-                      setDisplayFormat('embedded');
-                      setIsMaximized(true);
-                    }}
-                    className="px-4 py-2.5 bg-blue-950 hover:bg-blue-900 text-amber-300 font-extrabold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
-                  >
-                    <Eye className="w-4 h-4" />
-                    <span>Abrir PDF en Pantalla Completa</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={onDownload}
-                  disabled={isDownloading}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-all"
-                >
-                  {isDownloading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4" />
-                  )}
-                  <span>
-                    Descargar PDF {isFree ? 'Gratis (Sin Clave)' : 'Directo (Modo Admin)'}
-                  </span>
-                </button>
-              </>
-            ) : (
-              <a
-                href={whatsappBuyUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-all"
+            {displayFormat !== 'embedded' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('fullscreen');
+                  setDisplayFormat('embedded');
+                  setIsMaximized(true);
+                }}
+                className="px-4 py-2.5 bg-blue-950 hover:bg-blue-900 text-amber-300 font-extrabold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
               >
-                <MessageCircle className="w-4 h-4 text-amber-300" />
-                <span>Comprar PDF Completo por $20 MXN al WhatsApp 6621395110</span>
-              </a>
+                <Eye className="w-4 h-4" />
+                <span>Ver las {fullCatalogTotalPages} Páginas en Pantalla</span>
+              </button>
             )}
+
+            <button
+              type="button"
+              onClick={onDownload}
+              disabled={isDownloading}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-all"
+            >
+              {isDownloading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              <span>{downloadLabel}</span>
+            </button>
           </div>
         </div>
       </div>

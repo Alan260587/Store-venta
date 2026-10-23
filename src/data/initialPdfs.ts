@@ -1,13 +1,20 @@
 import { PdfDocument } from '../types';
 
+export const OFFICIAL_CATALOG_ID = 'cat-shelo-nabel-2026';
+const BASE_URL = import.meta.env?.BASE_URL || '/';
+export const OFFICIAL_CATALOG_FULL_URL = `${BASE_URL}assets/aistudio/Catalogo_Shelo_NABEL2026_fd41deed.pdf`;
+export const OFFICIAL_CATALOG_PREVIEW5_URL = `${BASE_URL}assets/aistudio/Catalogo_Shelo_NABEL2026_preview5.pdf`;
+export const OFFICIAL_CATALOG_TOTAL_PARTS = 6;
+export const OFFICIAL_CATALOG_PART_URLS: string[] = Array.from(
+  { length: OFFICIAL_CATALOG_TOTAL_PARTS },
+  (_, idx) => `${BASE_URL}assets/aistudio/Catalogo_Shelo_NABEL2026_part${idx}.bin`
+);
+
 /**
- * IDs of the legacy default PDFs that were permanently removed by user request
- * ("Quita todos los pdfs por defecto yo subiré otros").
- * Included in both Backend and Frontend deletion tombstones so that any computer,
- * Android, iOS, or Tablet that previously cached them in localStorage, IndexedDB,
- * or Firestore automatically purges them and never re-uploads them.
+ * IDs of legacy PDFs and books that were permanently removed by user request.
  */
 export const REMOVED_DEFAULT_PDF_IDS: string[] = [
+  'pdf-1792671814576-16nso',
   'pdf-1792722675929-0-64vng',
   'pdf-1792674344869-0-eqy1e',
   'pdf-1792671810009-fq526',
@@ -37,6 +44,20 @@ export const REMOVED_DEFAULT_PDF_IDS: string[] = [
   'pdf-005'
 ];
 
-export const PROTECTED_DEFAULT_PDF_IDS: string[] = [];
+export const PROTECTED_DEFAULT_PDF_IDS: string[] = [OFFICIAL_CATALOG_ID];
 
-export const INITIAL_PDFS: PdfDocument[] = [];
+export const INITIAL_PDFS: PdfDocument[] = [
+  {
+    id: OFFICIAL_CATALOG_ID,
+    title: 'Catálogo Oficial Sheló NABEL 2026',
+    description:
+      'Catálogo Oficial Sheló NABEL 2026 completo (148 páginas • Vista previa de las primeras 5 páginas y descarga directa 100% gratis).',
+    pagesCount: 148,
+    price: 0,
+    downloadKey: 'GRATIS',
+    uploadedAt: '2026-10-22',
+    fileSize: '45.4 MB',
+    category: 'Catálogo Oficial',
+    updatedAt: 1792727141000
+  }
+];

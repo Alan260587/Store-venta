@@ -313,35 +313,34 @@ export default function App() {
     refreshPageData('¡Producto eliminado automáticamente de la Página, Firebase y la Nube!');
   };
 
-  // PDF Operations (Immediately updates the page state, Cloud Server, and Firebase on Guardar)
+  // Catalog Operations (Immediately updates the page state, Cloud Server, and Firebase on Guardar)
   const handleAddPdf = (pdfData: Omit<PdfDocument, 'id' | 'uploadedAt'>) => {
-    const result = dbStorage.addPdf(pdfData);
+    const result = dbStorage.addPdf({ ...pdfData, price: 0, downloadKey: 'GRATIS' });
     if (result.success) {
       refreshPageData(
-        `¡Guardado automático! PDF "${result.pdf?.title || pdfData.title}" subido a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet).`
+        `¡Guardado automático! Catálogo "${result.pdf?.title || pdfData.title}" (Preview 5 Págs • Gratis) subido a todos los dispositivos.`
       );
     }
     return result;
   };
 
   const handleAddPdfsBatch = (pdfList: Array<Omit<PdfDocument, 'id' | 'uploadedAt'>>) => {
-    const result = dbStorage.addPdfsBatch(pdfList);
+    const freeList = pdfList.map((item) => ({ ...item, price: 0, downloadKey: 'GRATIS' }));
+    const result = dbStorage.addPdfsBatch(freeList);
     if (result.success) {
       refreshPageData(
-        result.addedPdfs.length === 1
-          ? `¡Guardado automático! PDF "${result.addedPdfs[0].title}" subido a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet).`
-          : `¡Guardado automático! Se subieron ${result.addedPdfs.length} PDFs a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet).`
+        `¡Guardado automático! Catálogo "${result.addedPdfs[0]?.title || 'Oficial'}" (Preview 5 Págs • Gratis) disponible en todos los dispositivos.`
       );
     }
     return result;
   };
 
   const handleUpdatePdf = (pdf: PdfDocument, options?: { silent?: boolean }) => {
-    dbStorage.updatePdf(pdf, options);
+    dbStorage.updatePdf({ ...pdf, price: 0, downloadKey: 'GRATIS' }, options);
     refreshPageData(
       options?.silent
         ? undefined
-        : `¡Actualizado al momento! Cambios en el PDF "${pdf.title}" guardados en la Página, Firebase y Nube.`
+        : `¡Actualizado al momento! Cambios en el Catálogo "${pdf.title}" guardados en todos los dispositivos.`
     );
   };
 
@@ -361,7 +360,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 antialiased selection:bg-emerald-200 selection:text-emerald-900">
       
-      {/* Live Automatic Page Update Toast Banner whenever a Product or PDF is saved */}
+      {/* Live Automatic Page Update Toast Banner whenever a Product or Catalog is saved */}
       {pageRefreshMessage && (
         <div className="fixed bottom-24 right-5 z-50 max-w-md bg-emerald-900 text-white px-4 py-3 rounded-2xl shadow-2xl border-2 border-amber-400 flex items-center gap-3 animate-fade-in">
           <div className="w-8 h-8 rounded-xl bg-emerald-700 flex items-center justify-center shrink-0">
@@ -417,7 +416,7 @@ export default function App() {
             <ShieldCheck className="w-4 h-4 text-slate-950 shrink-0" />
             <span>Sesión de Administrador Activa (Clave ****)</span>
             <span className="hidden md:inline font-normal text-slate-900">
-              — Al darle "Guardar" a tus PDFs o productos, se suben automáticamente a la Página, a Firebase y a la Nube (Laptop, Android, iOS y Tablet).
+              — Al subir el Catálogo Oficial (Preview 5 Págs • Gratis) o editar productos, se guarda en todos los dispositivos.
             </span>
           </div>
 
@@ -516,7 +515,7 @@ export default function App() {
           </>
         )}
 
-        {/* PDFs Download Store View */}
+        {/* Free Official Catalog Download View */}
         {activeTab === 'pdfs' && (
           <PdfStore
             pdfs={pdfs}
@@ -524,6 +523,7 @@ export default function App() {
             isAdmin={isAdminUnlocked}
             onUpdatePdf={handleUpdatePdf}
             onDeletePdf={handleDeletePdf}
+            onOpenAdminLogin={() => setIsAdminModalOpen(true)}
             onOpenAddPdf={() => {
               if (isAdminUnlocked) {
                 setIsAddPdfModalOpen(true);

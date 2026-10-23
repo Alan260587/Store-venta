@@ -104,7 +104,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onSelectCategory }) 
                   onClick={() => onNavigate('pdfs')}
                   className="hover:text-amber-300 transition-colors"
                 >
-                  Descargas y Catálogos PDF ($0 y $20 MXN)
+                  Descargar Catálogo Oficial Gratis (Preview 5 Págs)
                 </button>
               </li>
               <li>

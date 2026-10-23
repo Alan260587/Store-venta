@@ -199,8 +199,8 @@ export const Hero: React.FC<HeroProps> = ({
                 className="w-full py-3 px-4 rounded-xl bg-white/95 hover:bg-emerald-100/80 text-emerald-950 font-extrabold text-sm border border-emerald-300 shadow-xs flex items-center justify-between transition-all"
               >
                 <span className="flex items-center gap-2.5">
-                  <FileText className="w-4 h-4 text-emerald-700" />
-                  <span>Catálogos y Libros PDF ({pdfsCount})</span>
+                  <BookOpen className="w-4 h-4 text-emerald-700" />
+                  <span>Descargar Catálogo Gratis (Preview 5 Págs)</span>
                 </span>
                 <ChevronRight className="w-4 h-4 text-emerald-700" />
               </button>
@@ -390,8 +390,8 @@ export const Hero: React.FC<HeroProps> = ({
                   onClick={onExplorePdfs}
                   className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5"
                 >
-                  <FileText className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Ver {pdfsCount} PDFs</span>
+                  <BookOpen className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Descargar Catálogo Gratis</span>
                 </button>
               </div>
             </div>

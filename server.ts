@@ -16,7 +16,12 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { INITIAL_PRODUCTS } from './src/data/initialProducts.ts';
-import { INITIAL_PDFS, PROTECTED_DEFAULT_PDF_IDS, REMOVED_DEFAULT_PDF_IDS } from './src/data/initialPdfs.ts';
+import {
+  INITIAL_PDFS,
+  PROTECTED_DEFAULT_PDF_IDS,
+  REMOVED_DEFAULT_PDF_IDS,
+  OFFICIAL_CATALOG_ID
+} from './src/data/initialPdfs.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +51,27 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 if (!fs.existsSync(PDF_FILES_DIR)) {
   fs.mkdirSync(PDF_FILES_DIR, { recursive: true });
+}
+
+// Reassemble the 148-page Official 2026 Catalog PDF from its 6 binary parts if cloned from GitHub
+try {
+  const assetsDir = path.join(__dirname, 'public', 'assets', 'aistudio');
+  const fullCatalogPath = path.join(assetsDir, 'Catalogo_Shelo_NABEL2026_fd41deed.pdf');
+  const part0Path = path.join(assetsDir, 'Catalogo_Shelo_NABEL2026_part0.bin');
+  if (!fs.existsSync(fullCatalogPath) && fs.existsSync(part0Path)) {
+    const partBuffers: Buffer[] = [];
+    for (let i = 0; i < 6; i++) {
+      const pPath = path.join(assetsDir, `Catalogo_Shelo_NABEL2026_part${i}.bin`);
+      if (fs.existsSync(pPath)) {
+        partBuffers.push(fs.readFileSync(pPath));
+      }
+    }
+    if (partBuffers.length === 6) {
+      fs.writeFileSync(fullCatalogPath, Buffer.concat(partBuffers));
+    }
+  }
+} catch (err) {
+  console.warn('Notice reassembling official catalog from parts:', err);
 }
 
 // Initialize Firebase Cloud Firestore on the Backend so Backend + Frontend + All Devices share 100% identical state
@@ -193,17 +219,28 @@ function mergePdfsList(
   let changed = false;
 
   for (const item of existingList) {
-    if (item && item.id && !deletedSet.has(item.id)) {
+    if (item && item.id && !deletedSet.has(item.id) && !String(item.id).startsWith('pdf-')) {
       const { fileData, ...cleanExisting } = item;
-      map.set(cleanExisting.id, cleanExisting);
-    } else if (item && item.id && deletedSet.has(item.id)) {
+      map.set(cleanExisting.id, {
+        ...cleanExisting,
+        price: 0,
+        downloadKey: 'GRATIS',
+        category: 'Catálogo Oficial'
+      });
+    } else if (item && item.id && (deletedSet.has(item.id) || String(item.id).startsWith('pdf-'))) {
       changed = true;
     }
   }
 
   for (const inc of incomingList) {
-    if (!inc || !inc.id || deletedSet.has(inc.id)) continue;
-    const { fileData, ...cleanInc } = inc;
+    if (!inc || !inc.id || deletedSet.has(inc.id) || String(inc.id).startsWith('pdf-')) continue;
+    const { fileData, ...rawCleanInc } = inc;
+    const cleanInc = {
+      ...rawCleanInc,
+      price: 0,
+      downloadKey: 'GRATIS',
+      category: 'Catálogo Oficial'
+    };
     const prev = map.get(cleanInc.id);
     if (!prev) {
       map.set(cleanInc.id, cleanInc);
@@ -231,22 +268,22 @@ function mergePdfsList(
     }
   }
 
-  // Recover any orphaned PDF files present in .data/pdfs/ that are not deleted
+  // Recover any orphaned catalog files present in .data/pdfs/ that are not deleted
   try {
     if (fs.existsSync(PDF_FILES_DIR)) {
       for (const name of fs.readdirSync(PDF_FILES_DIR)) {
         if (!name.endsWith('.pdf')) continue;
         const pdfId = name.replace(/\.pdf$/i, '');
-        if (pdfId && !deletedSet.has(pdfId) && !map.has(pdfId)) {
+        if (pdfId && !pdfId.startsWith('pdf-') && !deletedSet.has(pdfId) && !map.has(pdfId)) {
           const stat = fs.statSync(path.join(PDF_FILES_DIR, name));
           const mb = Math.max(0.1, stat.size / (1024 * 1024)).toFixed(1);
           map.set(pdfId, {
             id: pdfId,
-            title: `Catálogo PDF (${pdfId.slice(0, 12)})`,
-            description: 'Documento PDF recuperado y sincronizado en la página.',
+            title: 'Catálogo Oficial Sheló NABEL',
+            description: 'Catálogo Oficial Sheló NABEL (Vista previa de 5 páginas y descarga gratis).',
             pagesCount: 1,
-            price: 20,
-            downloadKey: 'SN-2026',
+            price: 0,
+            downloadKey: 'GRATIS',
             uploadedAt: new Date(stat.mtimeMs).toISOString().split('T')[0],
             fileSize: `${mb} MB`,
             category: 'Catálogo Oficial',
@@ -374,22 +411,21 @@ async function backendUpsertProductToFirestore(product: any): Promise<void> {
 }
 
 async function backendUpsertPdfToFirestore(pdf: any): Promise<void> {
-  if (!backendDb || !pdf || !pdf.id) return;
+  if (!backendDb || !pdf || !pdf.id || String(pdf.id).startsWith('pdf-')) return;
   const docId = sanitizeDocId(pdf.id);
   if (!docId) return;
   try {
-    const cleanPrice = Number(pdf.price) === 0 ? 0 : 20;
     const updatedAtMs = Number(pdf.updatedAt || getTimestampFromId(pdf.id) || 1);
     await setDoc(doc(backendDb, 'pdfs', docId), {
       id: docId,
-      title: String(pdf.title || 'Catálogo PDF').slice(0, 250),
-      description: String(pdf.description || 'Documento PDF oficial.').slice(0, 1500),
+      title: String(pdf.title || 'Catálogo Oficial Sheló NABEL').slice(0, 250),
+      description: String(pdf.description || 'Catálogo Oficial Sheló NABEL (Vista previa de 5 páginas y descarga gratis).').slice(0, 1500),
       pagesCount: Math.max(1, Math.min(5000, Number(pdf.pagesCount) || 1)),
-      price: cleanPrice,
-      downloadKey: String(pdf.downloadKey || 'SN-2026').slice(0, 60),
+      price: 0,
+      downloadKey: 'GRATIS',
       uploadedAt: String(pdf.uploadedAt || new Date().toISOString().split('T')[0]).slice(0, 40),
       fileSize: String(pdf.fileSize || '1.0 MB').slice(0, 40),
-      category: String(pdf.category || 'Catálogo Oficial').slice(0, 100),
+      category: 'Catálogo Oficial',
       visibility: 'public',
       authorUid: 'shelo_backend_server',
       adminKey: UNIFIED_ADMIN_KEY,
@@ -528,18 +564,23 @@ async function startBackendFirestoreSync() {
     pdfSnap.forEach((docSnap) => {
       const d = docSnap.data();
       if (d && typeof d.id === 'string' && typeof d.title === 'string') {
-        remotePdfsMap.set(d.id, {
-          id: d.id,
-          title: d.title,
-          description: String(d.description || ''),
-          pagesCount: Number(d.pagesCount) || 1,
-          price: Number(d.price) === 0 ? 0 : 20,
-          downloadKey: String(d.downloadKey || 'SN-2026'),
-          uploadedAt: String(d.uploadedAt || ''),
-          fileSize: String(d.fileSize || '1.0 MB'),
-          category: String(d.category || 'Catálogo Oficial'),
-          updatedAt: Number(d.updatedAtMs || getTimestampFromId(d.id) || 1)
-        });
+        if (String(d.id).startsWith('pdf-')) {
+          remoteDeletedPdfs.push(d.id);
+          void backendRecordDeletionInFirestore(d.id, 'pdf');
+        } else {
+          remotePdfsMap.set(d.id, {
+            id: d.id,
+            title: d.title,
+            description: String(d.description || ''),
+            pagesCount: Number(d.pagesCount) || 1,
+            price: 0,
+            downloadKey: 'GRATIS',
+            uploadedAt: String(d.uploadedAt || ''),
+            fileSize: String(d.fileSize || '1.0 MB'),
+            category: 'Catálogo Oficial',
+            updatedAt: Number(d.updatedAtMs || getTimestampFromId(d.id) || 1)
+          });
+        }
       }
     });
 
@@ -593,7 +634,7 @@ async function startBackendFirestoreSync() {
       }
     }
 
-    for (const pdf of serverStore.pdfs.filter(isPdfModifiedFromDefault)) {
+    for (const pdf of serverStore.pdfs) {
       const rem = remotePdfsMap.get(pdf.id);
       const localTime = Number(pdf.updatedAt || getTimestampFromId(pdf.id) || 1);
       const remTime = rem ? Number(rem.updatedAt || 0) : -1;
@@ -1071,10 +1112,16 @@ async function startServer() {
     const pdfId = String(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
     const dataFilePath = path.join(PDF_FILES_DIR, `${pdfId}.pdf`);
     const publicFilePath = path.join(PUBLIC_PDF_DIR, `${pdfId}.pdf`);
+    const officialAssetPath =
+      pdfId === OFFICIAL_CATALOG_ID
+        ? path.join(__dirname, 'public', 'assets', 'aistudio', 'Catalogo_Shelo_NABEL2026_fd41deed.pdf')
+        : null;
     let resolvedPath = fs.existsSync(dataFilePath)
       ? dataFilePath
       : fs.existsSync(publicFilePath)
       ? publicFilePath
+      : officialAssetPath && fs.existsSync(officialAssetPath)
+      ? officialAssetPath
       : null;
 
     // If not found on local container disk, fetch from Firebase Firestore chunks and cache locally
@@ -1114,6 +1161,57 @@ async function startServer() {
       res.sendFile(resolvedPath);
     } else {
       res.status(404).json({ ok: false });
+    }
+  });
+
+  // 7. Serve 8 MB binary parts of a PDF via authenticated fetch() so mobile browsers (Android/iOS)
+  // assemble a verified in-memory Blob URL and never trigger cookie-less OS DownloadManager errors
+  app.get('/api/pdf-part/:id/:partIndex', (req, res) => {
+    const pdfId = String(req.params.id).replace(/[^a-zA-Z0-9_-]/g, '');
+    const partIndex = Math.max(0, parseInt(String(req.params.partIndex || '0'), 10) || 0);
+    const dataFilePath = path.join(PDF_FILES_DIR, `${pdfId}.pdf`);
+    const publicFilePath = path.join(PUBLIC_PDF_DIR, `${pdfId}.pdf`);
+    const officialAssetPath =
+      pdfId === OFFICIAL_CATALOG_ID
+        ? path.join(__dirname, 'public', 'assets', 'aistudio', 'Catalogo_Shelo_NABEL2026_fd41deed.pdf')
+        : null;
+
+    const resolvedPath = fs.existsSync(dataFilePath)
+      ? dataFilePath
+      : fs.existsSync(publicFilePath)
+      ? publicFilePath
+      : officialAssetPath && fs.existsSync(officialAssetPath)
+      ? officialAssetPath
+      : null;
+
+    if (!resolvedPath) {
+      res.status(404).json({ ok: false });
+      return;
+    }
+
+    try {
+      const stat = fs.statSync(resolvedPath);
+      const partSize = 8 * 1024 * 1024; // 8 MB
+      const start = partIndex * partSize;
+      if (start >= stat.size) {
+        res.status(416).json({ ok: false });
+        return;
+      }
+      const end = Math.min(start + partSize, stat.size);
+      const length = end - start;
+      const fd = fs.openSync(resolvedPath, 'r');
+      const buffer = Buffer.alloc(length);
+      fs.readSync(fd, buffer, 0, length, start);
+      fs.closeSync(fd);
+
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Length', String(length));
+      res.setHeader('X-Total-Size', String(stat.size));
+      res.setHeader('X-Total-Parts', String(Math.ceil(stat.size / partSize)));
+      res.send(buffer);
+    } catch (e) {
+      console.warn('Error serving PDF part:', e);
+      res.status(500).json({ ok: false });
     }
   });
 

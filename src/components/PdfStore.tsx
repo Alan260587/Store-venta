@@ -1,253 +1,113 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
-  Search,
-  FileText,
-  CheckCircle2,
-  Gift,
-  Upload,
-  Sparkles,
-  KeyRound,
   BookOpen,
+  Plus,
+  Shield,
+  Sparkles,
+  CheckCircle2,
+  Eye,
   Download,
-  RefreshCw
+  Upload,
+  MessageCircle
 } from 'lucide-react';
 import { PdfDocument, Product } from '../types';
 import { PdfCard } from './PdfCard';
-import { generateAdminManualPdf } from '../utils/generateManualPdf';
 import { SHELO_LOGO_URL } from './Navbar';
 
 interface PdfStoreProps {
   pdfs: PdfDocument[];
   products?: Product[];
-  isAdmin?: boolean;
-  onUpdatePdf?: (pdf: PdfDocument, options?: { silent?: boolean }) => void;
-  onDeletePdf?: (id: string) => void;
-  onOpenAddPdf?: () => void;
+  isAdmin: boolean;
+  onOpenAddPdf: () => void;
+  onOpenAdminLogin: () => void;
+  onUpdatePdf: (pdf: PdfDocument, options?: { silent?: boolean }) => void;
+  onDeletePdf: (id: string) => void;
 }
 
 export const PdfStore: React.FC<PdfStoreProps> = ({
   pdfs,
   products = [],
   isAdmin,
+  onOpenAddPdf,
+  onOpenAdminLogin,
   onUpdatePdf,
-  onDeletePdf,
-  onOpenAddPdf
+  onDeletePdf
 }) => {
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [filterType, setFilterType] = useState<'all' | 'free' | 'paid'>('all');
-  const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
-  const [isDownloadingGuide, setIsDownloadingGuide] = useState<boolean>(false);
-
-  const categories = [
-    'Todas',
-    ...Array.from(new Set(pdfs.map((p) => p.category || 'Catálogo Oficial')))
-  ];
-
-  const handleDownloadGuide = async () => {
-    setIsDownloadingGuide(true);
-    try {
-      const blob = await generateAdminManualPdf();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'Instructivo_Uso_App_Shelo_NABEL.pdf';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (e) {
-      console.error('Error downloading guide:', e);
-    } finally {
-      setIsDownloadingGuide(false);
-    }
-  };
-
-  const filteredPdfs = pdfs.filter((pdf) => {
-    const matchesSearch =
-      pdf.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pdf.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (pdf.category && pdf.category.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    const isFree = Number(pdf.price) === 0;
-    const matchesPrice =
-      filterType === 'all' ||
-      (filterType === 'free' && isFree) ||
-      (filterType === 'paid' && !isFree);
-
-    const matchesCategory =
-      selectedCategory === 'Todas' || (pdf.category || 'Catálogo Oficial') === selectedCategory;
-
-    return matchesSearch && matchesPrice && matchesCategory;
-  });
-
   return (
-    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
-      {/* Header Banner with Sheló NABEL Logo */}
-      <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white rounded-3xl p-6 sm:p-8 mb-8 shadow-xl border-2 border-amber-400/60 relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-64 h-64 bg-amber-400/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 max-w-3xl">
+    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      {/* Header Banner with Official Sheló NABEL Logo */}
+      <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 rounded-3xl p-6 sm:p-10 text-white shadow-xl mb-8 relative overflow-hidden border-2 border-amber-400">
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 max-w-3xl text-center sm:text-left">
             <img
               src={SHELO_LOGO_URL}
               alt="Sheló NABEL Jhosie Girón"
-              className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-4 border-amber-400 shadow-2xl shrink-0 bg-white"
+              className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-3 border-amber-400 shadow-xl bg-white shrink-0"
             />
-
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/50 text-amber-200 text-xs font-bold mb-3">
-                <Gift className="w-3.5 h-3.5 text-amber-300" />
-                <span>Sheló NABEL • Jhosie Girón • Biblioteca de Catálogos y PDFs</span>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-300 text-xs font-semibold mb-3">
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>Vista Previa de 5 Páginas • Descarga Completa 100% Gratis</span>
               </div>
-
-              <h2 className="text-2xl sm:text-4xl font-serif font-extrabold text-white mb-2">
-                Catálogos y Documentos en PDF ({pdfs.length})
+              <h2 className="text-2xl sm:text-4xl font-serif font-extrabold tracking-tight mb-2">
+                Catálogo Oficial Sheló NABEL para Descargar Gratis
               </h2>
-
-              <p className="text-xs sm:text-sm text-amber-100/90 font-light leading-relaxed mb-4">
-                Sube tus propios catálogos y archivos PDF. Los documentos{' '}
-                <strong>Gratis ($0 MXN)</strong> tienen descarga libre inmediata, y los de{' '}
-                <strong>$20 MXN</strong> se descargan con Clave de Administrador. Cualquier archivo subido
-                o editado se guarda y sincroniza <strong>al momento</strong> en todas tus computadoras y celulares.
+              <p className="text-blue-100 text-sm sm:text-base leading-relaxed font-light">
+                Visualiza la <strong>vista previa de 5 páginas</strong> del catálogo oficial en pantalla y{' '}
+                <strong>descárgalo completo totalmente gratis</strong> en tu computadora, celular Android, iPhone o Tablet.
               </p>
-
-              <div className="flex flex-wrap items-center gap-2.5 text-xs text-emerald-200">
-                <div className="flex items-center gap-1.5 bg-blue-950/60 px-3 py-1.5 rounded-full border border-amber-400/40">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span className="font-bold text-white">Gratis ($0): Descarga Directa Sin Clave</span>
-                </div>
-                <div className="flex items-center gap-1.5 bg-blue-950/60 px-3 py-1.5 rounded-full border border-amber-400/40">
-                  <KeyRound className="w-4 h-4 text-amber-400" />
-                  <span>$20 MXN: Con Clave controlada por Admin</span>
-                </div>
-                <div className="flex items-center gap-1.5 bg-blue-950/60 px-3 py-1.5 rounded-full border border-amber-400/40">
-                  <RefreshCw className="w-3.5 h-3.5 text-cyan-300" />
-                  <span>Actualización Instantánea al Momento y al Guardar</span>
-                </div>
-              </div>
             </div>
           </div>
 
-          {onOpenAddPdf && (
-            <div className="shrink-0 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 shrink-0">
+            {isAdmin ? (
               <button
                 type="button"
                 onClick={onOpenAddPdf}
-                className="px-6 py-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs sm:text-sm shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
+                className="px-6 py-4 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-sm rounded-2xl shadow-lg flex items-center gap-2 transition-all cursor-pointer"
               >
-                <Upload className="w-5 h-5 text-slate-950" />
-                <span>+ Subir Archivos PDF</span>
+                <Plus className="w-5 h-5" />
+                <span>+ Subir Catálogo para Descargar Gratis</span>
               </button>
-              <span className="text-[11px] text-amber-200 text-center font-semibold">
-                {isAdmin ? 'Modo Admin Activo • Actualiza al momento' : 'Requiere Clave Admin (****)'}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Admin Notice Banner + Instructivo PDF Download if Admin is active */}
-      {isAdmin && (
-        <div className="mb-6 p-4 rounded-2xl bg-amber-50 border-2 border-amber-300 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs text-amber-950 shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <KeyRound className="w-5 h-5 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-bold">Vista de Administrador Activa:</span> Cualquier cambio que hagas en el título, categoría, descripción, clave o modalidad (Gratis $0 / $20 MXN) de cualquier PDF se <strong>actualiza al momento y al darle Guardar</strong> en todos tus dispositivos.
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleDownloadGuide}
-            disabled={isDownloadingGuide}
-            className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-amber-300 font-bold text-xs rounded-xl shadow-sm flex items-center gap-2 shrink-0 transition-all"
-          >
-            <BookOpen className="w-4 h-4" />
-            <Download className="w-4 h-4" />
-            <span>{isDownloadingGuide ? 'Generando PDF...' : 'Descargar Instructivo de Uso (PDF)'}</span>
-          </button>
-        </div>
-      )}
-
-      {/* Search & Filter Bar */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border-2 border-amber-200 shadow-sm mb-8 space-y-3">
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por título de catálogo, libro o categoría..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50/30 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-900 text-xs sm:text-sm text-slate-800"
-            />
-          </div>
-
-          {/* Filter Chips: Todos / Gratis / $20 MXN */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setFilterType('all')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                filterType === 'all'
-                  ? 'bg-blue-950 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              Todos ({pdfs.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterType('free')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                filterType === 'free'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Gratis $0 ({pdfs.filter((p) => Number(p.price) === 0).length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterType('paid')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                filterType === 'paid'
-                  ? 'bg-slate-900 text-amber-300 shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              De Pago $20 ({pdfs.filter((p) => Number(p.price) > 0).length})
-            </button>
-          </div>
-        </div>
-
-        {/* Category Filter Pills */}
-        {categories.length > 1 && (
-          <div className="flex items-center gap-2 overflow-x-auto pt-2 border-t border-amber-100 scrollbar-none">
-            <span className="text-[11px] font-bold text-slate-500 uppercase shrink-0">Categorías PDF:</span>
-            {categories.map((cat) => (
+            ) : (
               <button
-                key={cat}
                 type="button"
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                  selectedCategory === cat
-                    ? 'bg-amber-400 text-slate-950 shadow-2xs'
-                    : 'bg-amber-50 text-slate-700 hover:bg-amber-100 border border-amber-200'
-                }`}
+                onClick={onOpenAdminLogin}
+                className="px-5 py-3.5 bg-white/10 hover:bg-white/20 text-white border border-amber-300/40 font-semibold text-xs sm:text-sm rounded-2xl backdrop-blur-xs flex items-center gap-2 transition-all"
               >
-                {cat}
+                <Shield className="w-4 h-4 text-amber-300" />
+                <span>Subir Catálogo (Admin ****)</span>
               </button>
-            ))}
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* PDF Cards Grid */}
-      {filteredPdfs.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredPdfs.map((pdf) => (
+      {/* Info Notice Bar */}
+      <div className="bg-amber-50/90 border-2 border-amber-200 rounded-2xl p-4 mb-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3 text-xs sm:text-sm text-blue-950 font-medium">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <span>
+            <strong>Catálogo Oficial 100% Gratuito:</strong> Puedes ver la{' '}
+            <strong className="text-blue-900">Vista Previa de 5 Páginas</strong> y{' '}
+            <strong className="text-emerald-700">Descargar el Catálogo Completo Gratis</strong> con un solo clic.
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-emerald-800 font-bold shrink-0 bg-emerald-100/80 px-3 py-1.5 rounded-xl border border-emerald-300">
+          <Eye className="w-4 h-4 text-emerald-700" />
+          <span>Preview de 5 Páginas + Descarga Gratis</span>
+        </div>
+      </div>
+
+      {/* Catalog Cards Grid */}
+      {pdfs.length > 0 ? (
+        <div
+          className={`grid grid-cols-1 ${
+            pdfs.length === 1 ? 'max-w-2xl mx-auto' : 'md:grid-cols-2 lg:grid-cols-3'
+          } gap-6`}
+        >
+          {pdfs.map((pdf) => (
             <PdfCard
               key={pdf.id}
               pdf={pdf}
@@ -258,42 +118,52 @@ export const PdfStore: React.FC<PdfStoreProps> = ({
             />
           ))}
         </div>
-      ) : pdfs.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border-2 border-dashed border-amber-300 max-w-lg mx-auto my-8 shadow-xs">
-          <FileText className="w-14 h-14 text-amber-500 mx-auto mb-3" />
-          <h3 className="font-bold text-lg text-slate-900 mb-1">
-            Aún no hay archivos PDF cargados
-          </h3>
-          <p className="text-xs sm:text-sm text-slate-600 mb-5">
-            Todos los PDFs por defecto fueron retirados. Haz clic en el botón para subir tus propios archivos PDF (individuales o por lote) y se sincronizarán automáticamente en todas tus computadoras, celulares y tablets.
-          </p>
-          {onOpenAddPdf && (
-            <button
-              type="button"
-              onClick={onOpenAddPdf}
-              className="px-6 py-3 bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs sm:text-sm font-extrabold rounded-xl shadow-md inline-flex items-center gap-2 transition-all"
-            >
-              <Upload className="w-4 h-4" />
-              <span>+ Subir Mis Archivos PDF</span>
-            </button>
-          )}
-        </div>
       ) : (
-        <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 max-w-md mx-auto my-8">
-          <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <h3 className="font-bold text-base text-slate-800 mb-1">No hay catálogos PDF coincidentes</h3>
-          <p className="text-xs text-slate-500 mb-4">Intenta con otra palabra clave o cambia el filtro.</p>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchTerm('');
-              setFilterType('all');
-              setSelectedCategory('Todas');
-            }}
-            className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg"
-          >
-            Ver todos los PDFs ({pdfs.length})
-          </button>
+        <div className="bg-white rounded-3xl p-10 text-center border-2 border-amber-200 shadow-sm max-w-2xl mx-auto">
+          <div className="w-20 h-20 rounded-full bg-emerald-50 border-2 border-emerald-200 flex items-center justify-center mx-auto mb-4">
+            <BookOpen className="w-10 h-10 text-emerald-600" />
+          </div>
+          <h3 className="font-serif font-extrabold text-xl text-blue-950 mb-2">
+            Catálogo Oficial Sheló NABEL (Vista Previa de 5 Páginas y Descarga Gratis)
+          </h3>
+          <p className="text-xs sm:text-sm text-slate-600 mb-6 leading-relaxed">
+            {isAdmin
+              ? 'Sube aquí el Catálogo Oficial para que todos los visitantes puedan ver su vista previa de 5 páginas y descargarlo completo gratis.'
+              : 'El catálogo oficial estará disponible aquí para ver su vista previa de 5 páginas y descargarlo gratis. También puedes solicitarlo directamente por WhatsApp.'}
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={onOpenAddPdf}
+                className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-extrabold rounded-2xl shadow-md flex items-center gap-2 transition-all"
+              >
+                <Upload className="w-4 h-4 text-amber-300" />
+                <span>Subir Catálogo Oficial Gratis</span>
+              </button>
+            ) : (
+              <>
+                <a
+                  href="https://wa.me/526621395110?text=Hola%20Jhosie%20Gir%C3%B3n%2C%20me%20gustar%C3%ADa%20recibir%20el%20Cat%C3%A1logo%20Oficial%20Shel%C3%B3%20NABEL%20gratis."
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-extrabold rounded-2xl shadow-md flex items-center gap-2 transition-all"
+                >
+                  <MessageCircle className="w-4 h-4 text-amber-300" />
+                  <span>Solicitar Catálogo Gratis por WhatsApp (6621395110)</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={onOpenAdminLogin}
+                  className="px-5 py-3 bg-blue-950 hover:bg-blue-900 text-amber-300 text-xs sm:text-sm font-bold rounded-2xl flex items-center gap-2 transition-all"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Subir Catálogo (Modo Admin)</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
     </section>

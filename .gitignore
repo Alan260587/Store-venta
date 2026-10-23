@@ -7,5 +7,4 @@ coverage/
 .env*
 !.env.example
 .data/pdfs/
-
-
+public/assets/aistudio/Catalogo_Shelo_NABEL2026_fd41deed.pdf

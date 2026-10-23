@@ -20,7 +20,7 @@ import {
   OperationType,
   handleFirestoreError
 } from '../firebase';
-import { REMOVED_DEFAULT_PDF_IDS } from '../data/initialPdfs';
+import { REMOVED_DEFAULT_PDF_IDS, OFFICIAL_CATALOG_ID } from '../data/initialPdfs';
 
 const removedDefaultPdfIdsSet = new Set<string>(REMOVED_DEFAULT_PDF_IDS);
 
@@ -330,6 +330,12 @@ export const pdfFileStore = {
       }
     } catch {
       // Fall through to Cloud Server and Firebase
+    }
+
+    // For the built-in 45.4 MB Official 2026 Catalog, if no custom replacement blob is in IndexedDB,
+    // return null immediately so the app uses the fast 849 KB 5-page preview asset and direct static download URL
+    if (pdfId === OFFICIAL_CATALOG_ID) {
+      return null;
     }
 
     // 2. Try Cloud Server (/api/pdf-file/:id) with short retry in case another device is mid-upload

@@ -226,7 +226,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-950/90 border border-amber-400/40 text-[11px] text-amber-100 font-semibold">
           <CheckCircle2 className="w-3 h-3 text-emerald-400" />
           <span>
-            {totalProductsCount} Productos • {totalPdfsCount} PDFs Activos al Momento
+            {totalProductsCount} Productos • Catálogo Oficial Gratis (Preview 5 Págs)
           </span>
         </span>
 
@@ -342,8 +342,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : 'text-emerald-900 hover:bg-emerald-100/80'
               }`}
             >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Catálogos PDF ({totalPdfsCount})</span>
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>Descargar Catálogo Gratis</span>
             </button>
 
             <button
@@ -464,8 +464,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
             }`}
           >
-            <FileText className="w-3.5 h-3.5 text-emerald-600" />
-            <span>PDFs ({totalPdfsCount})</span>
+            <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Descargar Catálogo Gratis</span>
           </button>
 
           <button
@@ -532,7 +532,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="my-4 p-4 rounded-2xl bg-gradient-to-r from-blue-950 via-blue-900 to-emerald-900 text-white border-2 border-amber-400/70 shadow-md">
               <label className="text-xs font-extrabold uppercase tracking-wider text-amber-300 flex items-center gap-1.5 mb-2">
                 <Search className="w-4 h-4 text-amber-400" />
-                <span>Buscador Rápido en el Menú (Productos, Claves S1701 o Catálogos PDF):</span>
+                <span>Buscador Rápido en el Menú (Productos, Claves S1701 o Catálogo):</span>
               </label>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -547,7 +547,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         handleApplyQuickSearchToCatalog(menuSearchTerm.trim());
                       }
                     }}
-                    placeholder="Escribe el nombre del producto, clave (ej. S1701), ingrediente o PDF..."
+                    placeholder="Escribe el nombre del producto, clave (ej. S1701) o ingrediente..."
                     className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-white text-slate-900 text-xs sm:text-sm font-semibold placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
                     autoFocus
                   />
@@ -580,7 +580,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {quickSearchResults.matchedProducts.length === 0 &&
                   quickSearchResults.matchedPdfs.length === 0 ? (
                     <div className="text-center py-3 text-xs text-slate-500">
-                      No se encontraron productos ni PDFs con &ldquo;{menuSearchTerm}&rdquo;.
+                      No se encontraron productos con &ldquo;{menuSearchTerm}&rdquo;.
                     </div>
                   ) : (
                     <>
@@ -635,44 +635,35 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {quickSearchResults.matchedPdfs.length > 0 && (
                         <div className="pt-2 border-t border-slate-100">
                           <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 block mb-1.5">
-                            Catálogos PDF Encontrados ({quickSearchResults.matchedPdfs.length}):
+                            Catálogo Oficial para Descargar Gratis:
                           </span>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {quickSearchResults.matchedPdfs.map((pdf) => {
-                              const isFreePdf = Number(pdf.price) === 0;
-                              return (
-                                <button
-                                  key={pdf.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setActiveTab('pdfs');
-                                    setIsMenuDrawerOpen(false);
-                                  }}
-                                  className="p-2 rounded-xl bg-emerald-50/70 hover:bg-emerald-100 border border-emerald-200 flex items-center justify-between gap-2 text-left transition-colors"
-                                >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <FileText className="w-4 h-4 text-emerald-700 shrink-0" />
-                                    <div className="min-w-0">
-                                      <span className="font-bold text-xs text-slate-900 block truncate">
-                                        {pdf.title}
-                                      </span>
-                                      <span className="text-[10px] text-slate-500">
-                                        {pdf.pagesCount} págs • Vista previa 8 págs
-                                      </span>
-                                    </div>
+                            {quickSearchResults.matchedPdfs.map((pdf) => (
+                              <button
+                                key={pdf.id}
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('pdfs');
+                                  setIsMenuDrawerOpen(false);
+                                }}
+                                className="p-2 rounded-xl bg-emerald-50/70 hover:bg-emerald-100 border border-emerald-200 flex items-center justify-between gap-2 text-left transition-colors"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <BookOpen className="w-4 h-4 text-emerald-700 shrink-0" />
+                                  <div className="min-w-0">
+                                    <span className="font-bold text-xs text-slate-900 block truncate">
+                                      {pdf.title}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">
+                                      {pdf.pagesCount} págs • Preview 5 págs
+                                    </span>
                                   </div>
-                                  <span
-                                    className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 ${
-                                      isFreePdf
-                                        ? 'bg-emerald-600 text-white'
-                                        : 'bg-blue-950 text-amber-300'
-                                    }`}
-                                  >
-                                    {isFreePdf ? 'Gratis' : '$20'}
-                                  </span>
-                                </button>
-                              );
-                            })}
+                                </div>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded shrink-0 bg-emerald-600 text-white">
+                                  Gratis
+                                </span>
+                              </button>
+                            ))}
                           </div>
                         </div>
                       )}
@@ -754,13 +745,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="w-full px-4 py-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 shadow-2xs flex items-center justify-between text-left transition-all"
                 >
                   <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-emerald-700" />
+                    <BookOpen className="w-5 h-5 text-emerald-700" />
                     <div>
                       <span className="font-bold text-sm text-emerald-950 block">
-                        Catálogos y Libros en PDF ({totalPdfsCount})
+                        Descargar Catálogo Oficial Gratis
                       </span>
                       <span className="text-[11px] text-emerald-700">
-                        Vista previa de 8 páginas y apertura en pantalla
+                        Vista previa de 5 páginas y descarga 100% gratis
                       </span>
                     </div>
                   </div>

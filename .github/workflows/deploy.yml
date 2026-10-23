@@ -29,6 +29,18 @@ jobs:
           node-version: 22
           cache: 'npm'
 
+      - name: Reassemble Official 2026 Catalog PDF from binary parts
+        run: |
+          if [ ! -f public/assets/aistudio/Catalogo_Shelo_NABEL2026_fd41deed.pdf ] && [ -f public/assets/aistudio/Catalogo_Shelo_NABEL2026_part0.bin ]; then
+            cat public/assets/aistudio/Catalogo_Shelo_NABEL2026_part0.bin \
+                public/assets/aistudio/Catalogo_Shelo_NABEL2026_part1.bin \
+                public/assets/aistudio/Catalogo_Shelo_NABEL2026_part2.bin \
+                public/assets/aistudio/Catalogo_Shelo_NABEL2026_part3.bin \
+                public/assets/aistudio/Catalogo_Shelo_NABEL2026_part4.bin \
+                public/assets/aistudio/Catalogo_Shelo_NABEL2026_part5.bin \
+                > public/assets/aistudio/Catalogo_Shelo_NABEL2026_fd41deed.pdf
+          fi
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
