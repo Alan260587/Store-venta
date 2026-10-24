@@ -8,6 +8,7 @@ import { INITIAL_PDFS, PROTECTED_DEFAULT_PDF_IDS, REMOVED_DEFAULT_PDF_IDS } from
 import { pdfFileStore } from './pdfFileStore';
 import {
   CloudStoreSnapshot,
+  computeSnapshotHash,
   publishCloudStoreSnapshot,
   pullLatestCloudSnapshots,
   subscribeToCloudRealtime
@@ -463,7 +464,7 @@ async function pushUpdateToServer(payload: {
     const bases = getDistinctApiBaseUrls();
 
     await Promise.allSettled([
-      publishCloudStoreSnapshot(snapshot),
+      publishCloudStoreSnapshot(snapshot, true),
       ...bases.map(async (base) => {
         const res = await fetch(`${base}/api/update-state`, {
           method: 'POST',
@@ -555,9 +556,12 @@ export const dbStorage = {
     let latestPresence: MultiUserPresence | undefined;
 
     // 1. Pull latest snapshots from Universal Cloud Bridge (works across ais-dev, ais-pre, vercel.app, Android, iOS, PC)
+    let latestRemoteHash = '';
     try {
       const cloudSnapshots = await pullLatestCloudSnapshots();
       if (pendingServerWrites === 0 && cloudSnapshots.length > 0) {
+        const lastRemoteSnap = cloudSnapshots[cloudSnapshots.length - 1];
+        latestRemoteHash = computeSnapshotHash(lastRemoteSnap);
         for (const snap of cloudSnapshots) {
           dbStorage.mergeIncomingServerData({
             products: snap.products,
@@ -565,6 +569,15 @@ export const dbStorage = {
             deletedProductIds: snap.deletedProductIds,
             deletedPdfIds: snap.deletedPdfIds
           });
+        }
+      }
+
+      // If this phone/computer has local modifications not yet in the Cloud Bridge, push them automatically
+      if (pendingServerWrites === 0) {
+        const mergedLocalSnap = buildCurrentCloudSnapshot();
+        const localHash = computeSnapshotHash(mergedLocalSnap);
+        if (mergedLocalSnap.products.length > 0 && localHash !== latestRemoteHash) {
+          void publishCloudStoreSnapshot(mergedLocalSnap, false);
         }
       }
     } catch {
@@ -1243,6 +1256,26 @@ export const dbStorage = {
         role: unlocked ? 'admin' : 'client'
       })
     }).catch(() => {});
+  },
+
+  /**
+   * Explicit "Guardar Todo Ahora" action that saves all products, photos, prices, and catalogs
+   * locally and immediately broadcasts them to all phones, computers, pages, and projects.
+   */
+  saveAllNow: async (): Promise<boolean> => {
+    const allProducts = dbStorage.getProducts();
+    const allPdfs = dbStorage.getPdfs();
+    dbStorage.saveProducts(allProducts);
+    dbStorage.savePdfs(allPdfs);
+    notifyPageUpdate(
+      'sync',
+      '¡Guardado instantáneo! Todos los cambios se guardaron en todos los celulares, páginas y proyectos.'
+    );
+    await pushUpdateToServer({
+      products: allProducts.filter((p) => Boolean(p.updatedAt) || isProductCustomOrModified(p)),
+      pdfs: allPdfs
+    });
+    return true;
   },
 
   resetDefaults: (): void => {

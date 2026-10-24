@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Minus, ShoppingCart, Star, Sparkles, Tag, Edit3, Trash2, Check, Palette, Camera, Loader2 } from 'lucide-react';
+import { Plus, Minus, ShoppingCart, Star, Sparkles, Tag, Edit3, Trash2, Check, Palette, Camera, Loader2, Save, CheckCircle2 } from 'lucide-react';
 import { Product } from '../types';
 import { compressProductImageFile } from '../utils/imageCompressor';
 
@@ -28,11 +28,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const [isEditingPrice, setIsEditingPrice] = useState<boolean>(false);
   const [tempPrice, setTempPrice] = useState<string>(String(product.price));
   const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
+  const [justSavedBadge, setJustSavedBadge] = useState<boolean>(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setTempPrice(String(product.price));
   }, [product.price]);
+
+  const triggerSavedFeedback = () => {
+    setJustSavedBadge(true);
+    setTimeout(() => setJustSavedBadge(false), 2600);
+  };
 
   const handleIncrement = () => setQuantity(prev => prev + 1);
   const handleDecrement = () => setQuantity(prev => (prev > 1 ? prev - 1 : 1));
@@ -47,23 +53,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     setTimeout(() => setAddedAnimation(false), 1200);
   };
 
-  const handleSavePrice = () => {
+  const handleSaveProductChanges = () => {
+    if (!onUpdateProduct) return;
     const cleaned = String(tempPrice).replace(/[^0-9.]/g, '');
     const val = parseFloat(cleaned);
-    if (!isNaN(val) && val > 0 && onUpdateProduct) {
-      if (val !== product.price) {
-        onUpdateProduct({
-          ...product,
-          price: val
-        });
-      }
-    } else {
-      setTempPrice(String(product.price));
-    }
+    const finalPrice = !isNaN(val) && val > 0 ? val : product.price;
+    setTempPrice(String(finalPrice));
+    onUpdateProduct({
+      ...product,
+      price: finalPrice
+    });
     setIsEditingPrice(false);
+    triggerSavedFeedback();
   };
 
-  // Allows uploading/changing the product photo directly from the user's device and syncing to all visitors
+  // Allows uploading/changing the product photo directly from the user's device and auto-saving to all devices
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputEl = e.target;
     const file = inputEl.files?.[0];
@@ -72,10 +76,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     setIsUploadingPhoto(true);
     try {
       const compressedDataUrl = await compressProductImageFile(file);
+      const cleaned = String(tempPrice).replace(/[^0-9.]/g, '');
+      const val = parseFloat(cleaned);
+      const finalPrice = !isNaN(val) && val > 0 ? val : product.price;
       onUpdateProduct({
         ...product,
+        price: finalPrice,
         image: compressedDataUrl
       });
+      triggerSavedFeedback();
     } catch (err) {
       console.error('Error al procesar la imagen del producto:', err);
     } finally {
@@ -119,7 +128,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <span>Clave: {product.clave}</span>
       </div>
 
-      {/* Admin Fast Actions Overlay (Change Photo, Edit Price, Delete) */}
+      {/* Admin Fast Actions Overlay (Change Photo, Edit Price, Save, Delete) */}
       {isAdmin && (
         <div className="absolute top-12 right-3 z-20 flex items-center gap-1 bg-white/95 backdrop-blur-md p-1 rounded-xl shadow-md border border-amber-300">
           <button
@@ -127,7 +136,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             onClick={() => photoInputRef.current?.click()}
             disabled={isUploadingPhoto}
             className="px-2 py-1 text-emerald-800 hover:text-emerald-950 rounded-lg bg-emerald-50 hover:bg-emerald-100 flex items-center gap-1 text-[10px] font-bold border border-emerald-200"
-            title="Cambiar foto del producto desde tu galería"
+            title="Subir foto del producto (se guarda automático al instante)"
           >
             {isUploadingPhoto ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
@@ -135,6 +144,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <Camera className="w-3.5 h-3.5 text-emerald-700" />
             )}
             <span>Foto</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveProductChanges}
+            className="px-2 py-1 text-white rounded-lg bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1 text-[10px] font-bold shadow-2xs"
+            title="Guardar foto y precio en todos los celulares y páginas"
+          >
+            <Save className="w-3 h-3" />
+            <span>Guardar</span>
           </button>
           <button
             type="button"
@@ -173,8 +191,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-20">
             <div className="bg-white px-3 py-2 rounded-xl shadow-lg flex items-center gap-2 text-xs font-bold text-emerald-800">
               <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
-              <span>Guardando foto...</span>
+              <span>Guardando foto al instante...</span>
             </div>
+          </div>
+        )}
+        {justSavedBadge && (
+          <div className="absolute bottom-2.5 left-3 z-20 bg-emerald-700 text-white px-2.5 py-1 rounded-full shadow-md flex items-center gap-1 text-[10px] font-bold">
+            <CheckCircle2 className="w-3.5 h-3.5 text-amber-300" />
+            <span>¡Guardado en todos los aparatos!</span>
           </div>
         )}
         {activeColorObj && (
@@ -244,6 +268,57 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </div>
             </div>
           )}
+
+          {/* Apartado de Guardar Rápido (Admin) */}
+          {isAdmin && (
+            <div className="mb-3 p-2.5 rounded-xl bg-amber-50/90 border border-amber-300 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                  <Save className="w-3 h-3 text-emerald-700" />
+                  <span>Apartado de Guardar (Admin)</span>
+                </span>
+                <span className="text-[10px] font-bold text-emerald-700">
+                  Auto-Guardado Activo
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={isUploadingPhoto}
+                  className="px-2 py-1.5 rounded-lg bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 text-[11px] font-bold flex items-center gap-1 shrink-0"
+                >
+                  <Camera className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Foto</span>
+                </button>
+                <div className="flex items-center bg-white border border-amber-400 rounded-lg px-2 py-1 flex-1 min-w-0">
+                  <span className="text-xs font-bold text-slate-500 mr-1">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={tempPrice}
+                    onChange={(e) => setTempPrice(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSaveProductChanges();
+                      }
+                    }}
+                    className="w-full text-xs font-bold font-mono text-slate-900 focus:outline-none bg-transparent"
+                    aria-label="Precio del producto"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveProductChanges}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shrink-0 shadow-2xs active:scale-95 transition-all"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Guardar</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Price and Cart controls */}
@@ -262,13 +337,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        handleSavePrice();
+                        handleSaveProductChanges();
                       } else if (e.key === 'Escape') {
                         setTempPrice(String(product.price));
                         setIsEditingPrice(false);
                       }
                     }}
-                    onBlur={handleSavePrice}
+                    onBlur={handleSaveProductChanges}
                     className="w-20 px-1.5 py-0.5 border-2 border-amber-500 rounded text-sm font-bold font-mono focus:outline-none"
                     autoFocus
                   />
@@ -276,12 +351,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                     type="button"
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      handleSavePrice();
+                      handleSaveProductChanges();
                     }}
-                    className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                    className="px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-[10px] font-bold flex items-center gap-0.5"
                     title="Guardar precio"
                   >
-                    <Check className="w-3.5 h-3.5" />
+                    <Check className="w-3 h-3" />
+                    <span>Guardar</span>
                   </button>
                 </div>
               ) : (
@@ -340,3 +416,4 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     </div>
   );
 };
+

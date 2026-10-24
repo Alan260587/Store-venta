@@ -93,28 +93,48 @@ export async function fetchSnapshotFromBytebin(
   }
 }
 
+export function computeSnapshotHash(snapshot: CloudStoreSnapshot): string {
+  return JSON.stringify({
+    p: snapshot.products
+      .map((p) => [p.id, p.price, p.name, p.clave, p.updatedAt || 0, (p.image || '').length])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    d: [...snapshot.deletedProductIds].sort(),
+    dp: [...snapshot.deletedPdfIds].sort(),
+    pdfs: snapshot.pdfs
+      .map((c) => [c.id, c.title, c.updatedAt || 0])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+  });
+}
+
 /**
  * Publishes the current modified store snapshot to the universal cloud bridge
  * so every phone, tablet, and computer on any URL receives it in < 250ms.
  */
 export async function publishCloudStoreSnapshot(
-  snapshot: CloudStoreSnapshot
+  snapshot: CloudStoreSnapshot,
+  force = false
 ): Promise<boolean> {
   try {
-    const stateHash = JSON.stringify({
-      p: snapshot.products.map((p) => [p.id, p.price, p.name, p.clave, p.updatedAt, p.image.length]),
-      d: snapshot.deletedProductIds,
-      dp: snapshot.deletedPdfIds,
-      pdfs: snapshot.pdfs.map((c) => [c.id, c.title, c.updatedAt])
-    });
-    if (stateHash === lastPushedHash) {
+    const stateHash = computeSnapshotHash(snapshot);
+    if (!force && stateHash === lastPushedHash) {
       return true;
     }
 
     // 1. Upload full snapshot (including base64 product photos) to Bytebin
     const bytebinKey = await uploadSnapshotToBytebin(snapshot);
     if (!bytebinKey) {
-      return false;
+      // Fallback: post snapshot directly to ntfy if Bytebin is temporarily unreachable
+      const fallbackRes = await fetch(`${NTFY_BASE_URL}/${CLOUD_SYNC_TOPIC}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=UTF-8'
+        },
+        body: JSON.stringify(snapshot)
+      });
+      if (fallbackRes.ok) {
+        lastPushedHash = stateHash;
+      }
+      return fallbackRes.ok;
     }
 
     lastPushedHash = stateHash;

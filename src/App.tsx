@@ -13,13 +13,14 @@ import { AddProductModal } from './components/AddProductModal';
 import { AddPdfModal } from './components/AddPdfModal';
 import { Footer } from './components/Footer';
 import { SHELO_LOGO_URL } from './components/Navbar';
-import { ShieldCheck, Lock, Users, CheckCircle2, MessageCircle } from 'lucide-react';
+import { ShieldCheck, Lock, Users, CheckCircle2, MessageCircle, Save, Loader2 } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'catalog' | 'pdfs' | 'admin'>('catalog');
   const [selectedCategory, setSelectedCategory] = useState<ProductCategory>('Todos');
   const [onlyStarProducts, setOnlyStarProducts] = useState<boolean>(false);
   const [globalSearchTerm, setGlobalSearchTerm] = useState<string>('');
+  const [isSavingAllGlobal, setIsSavingAllGlobal] = useState<boolean>(false);
   
   // Database State (preserved across reloads & synced across multiple users)
   const [products, setProducts] = useState<Product[]>(() => dbStorage.getProducts());
@@ -355,6 +356,18 @@ export default function App() {
     refreshPageData('¡Página actualizada! Se restauraron los datos predeterminados.');
   };
 
+  const handleSaveAllNow = async () => {
+    setIsSavingAllGlobal(true);
+    try {
+      await dbStorage.saveAllNow();
+      refreshPageData(
+        '¡Guardado instantáneo en todos los celulares, computadoras, páginas y proyectos completado!'
+      );
+    } finally {
+      setIsSavingAllGlobal(false);
+    }
+  };
+
   const totalCartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
@@ -425,6 +438,21 @@ export default function App() {
               <Users className="w-3 h-3" />
               <span>{presence.totalOnline} {presence.totalOnline === 1 ? 'usuario' : 'usuarios'} en línea</span>
             </span>
+
+            <button
+              type="button"
+              onClick={() => void handleSaveAllNow()}
+              disabled={isSavingAllGlobal}
+              className="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-md text-[11px] font-bold flex items-center gap-1 shadow-2xs"
+              title="Guardar todos los cambios ahora en todos los celulares, páginas y proyectos"
+            >
+              {isSavingAllGlobal ? (
+                <Loader2 className="w-3 h-3 animate-spin text-amber-300" />
+              ) : (
+                <Save className="w-3 h-3 text-amber-300" />
+              )}
+              <span>Guardar Todo</span>
+            </button>
 
             {activeTab !== 'admin' && (
               <button
@@ -548,6 +576,7 @@ export default function App() {
             onDeletePdf={handleDeletePdf}
             onUpdatePdf={handleUpdatePdf}
             onUpdateProduct={handleUpdateProduct}
+            onSaveAllNow={handleSaveAllNow}
             onLockAdmin={handleLockAdmin}
             onResetDefaults={handleResetDefaults}
           />

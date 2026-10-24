@@ -45,6 +45,7 @@ interface AdminPanelProps {
   onDeletePdf: (id: string) => void;
   onUpdatePdf: (pdf: PdfDocument, options?: { silent?: boolean }) => void;
   onUpdateProduct: (product: Product) => void;
+  onSaveAllNow?: () => Promise<void>;
   onLockAdmin: () => void;
   onResetDefaults: () => void;
 }
@@ -69,6 +70,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onDeletePdf,
   onUpdatePdf,
   onUpdateProduct,
+  onSaveAllNow,
   onLockAdmin,
   onResetDefaults
 }) => {
@@ -76,9 +78,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [editingPrice, setEditingPrice] = useState<string>('');
+  const [rowPriceDrafts, setRowPriceDrafts] = useState<Record<string, string>>({});
+  const [savedProductRowId, setSavedProductRowId] = useState<string | null>(null);
   const [uploadingPhotoProductId, setUploadingPhotoProductId] = useState<string | null>(null);
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
   const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
+  const [isSavingAllNow, setIsSavingAllNow] = useState<boolean>(false);
+  const [saveAllStatusMsg, setSaveAllStatusMsg] = useState<string>('');
   const [previewPdf, setPreviewPdf] = useState<PdfDocument | null>(null);
   const [previewMode, setPreviewMode] = useState<'preview5' | 'fullscreen'>('preview5');
 
@@ -107,6 +113,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       p.clave.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleGlobalSaveAllClick = async () => {
+    setIsSavingAllNow(true);
+    setSaveAllStatusMsg('');
+    try {
+      if (onSaveAllNow) {
+        await onSaveAllNow();
+      }
+      setSaveAllStatusMsg(
+        '¡Guardado instantáneo completado! Todas las fotos, precios, productos y catálogos ya están sincronizados en todos los celulares, computadoras, páginas y proyectos.'
+      );
+      setTimeout(() => setSaveAllStatusMsg(''), 5000);
+    } finally {
+      setIsSavingAllNow(false);
+    }
+  };
 
   const triggerBlobDownload = (blob: Blob, filename: string) => {
     const pdfBlob =
@@ -279,17 +301,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleSavePrice = (product: Product) => {
-    const cleaned = String(editingPrice).replace(/[^0-9.]/g, '');
+    const draftVal =
+      rowPriceDrafts[product.id] ??
+      (editingProductId === product.id ? editingPrice : String(product.price));
+    const cleaned = String(draftVal).replace(/[^0-9.]/g, '');
     const num = parseFloat(cleaned);
-    if (!isNaN(num) && num > 0) {
-      if (num !== product.price) {
-        onUpdateProduct({
-          ...product,
-          price: num
-        });
-      }
-    }
+    const finalPrice = !isNaN(num) && num > 0 ? num : product.price;
+    onUpdateProduct({
+      ...product,
+      price: finalPrice
+    });
     setEditingProductId(null);
+    setSavedProductRowId(product.id);
+    setTimeout(() => {
+      setSavedProductRowId((prev) => (prev === product.id ? null : prev));
+    }, 2400);
   };
 
   const handleTriggerProductPhotoUpload = (product: Product) => {
@@ -306,10 +332,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setUploadingPhotoProductId(targetProd.id);
     try {
       const compressedDataUrl = await compressProductImageFile(file);
+      const draftVal = rowPriceDrafts[targetProd.id];
+      const cleaned = draftVal !== undefined ? String(draftVal).replace(/[^0-9.]/g, '') : '';
+      const num = parseFloat(cleaned);
+      const finalPrice = !isNaN(num) && num > 0 ? num : targetProd.price;
+
       onUpdateProduct({
         ...targetProd,
+        price: finalPrice,
         image: compressedDataUrl
       });
+      setSavedProductRowId(targetProd.id);
+      setTimeout(() => {
+        setSavedProductRowId((prev) => (prev === targetProd.id ? null : prev));
+      }, 2400);
     } catch (err) {
       console.error('Error al subir foto del producto en AdminPanel:', err);
     } finally {
@@ -322,7 +358,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
       {/* Admin Header with Sheló NABEL Logo */}
-      <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 mb-8 shadow-xl border-2 border-amber-400/50 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+      <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 mb-6 shadow-xl border-2 border-amber-400/50 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <img
             src={SHELO_LOGO_URL}
@@ -343,12 +379,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Sube aquí tu <strong>Catálogo Oficial para Descargar Gratis (con Preview de 5 Páginas)</strong> y administra tus productos en todos los dispositivos.
+              Guardado automático al instante + Apartado de Guardar en todos los celulares, computadoras, páginas y proyectos.
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+          <button
+            type="button"
+            onClick={() => void handleGlobalSaveAllClick()}
+            disabled={isSavingAllNow}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
+          >
+            {isSavingAllNow ? (
+              <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+            ) : (
+              <Save className="w-4 h-4 text-amber-300" />
+            )}
+            <span>Guardar Todo Ahora</span>
+          </button>
+
           <button
             type="button"
             onClick={onResetDefaults}
@@ -368,6 +418,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <span>Cerrar Sesión</span>
           </button>
         </div>
+      </div>
+
+      {/* Apartado de Guardado Instantáneo en Todos los Aparatos, Páginas, Proyectos y Celulares */}
+      <div className="bg-gradient-to-r from-amber-50 via-emerald-50 to-amber-50 rounded-3xl p-5 sm:p-6 mb-8 shadow-md border-2 border-amber-400">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-700 text-white text-[11px] font-extrabold uppercase tracking-wide">
+              <Save className="w-3.5 h-3.5 text-amber-300" />
+              <span>Apartado de Guardar • Guardado Automático Instantáneo Activo</span>
+            </div>
+            <h3 className="font-serif font-bold text-slate-900 text-base sm:text-lg">
+              Sincronización en todos los celulares, computadoras, páginas y proyectos al instante
+            </h3>
+            <p className="text-xs text-slate-700">
+              Cada foto o precio que cambias se guarda automáticamente al instante. También puedes presionar el botón <strong>Guardar</strong> aquí o en cada producto para confirmar y enviar a todos los dispositivos en tiempo real.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => void handleGlobalSaveAllClick()}
+              disabled={isSavingAllNow}
+              className="px-5 py-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs sm:text-sm shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+            >
+              {isSavingAllNow ? (
+                <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+              ) : (
+                <Save className="w-4 h-4 text-amber-300" />
+              )}
+              <span>
+                {isSavingAllNow
+                  ? 'Guardando en todos los aparatos...'
+                  : 'Guardar Cambios en Todos los Celulares y Páginas'}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {saveAllStatusMsg && (
+          <div className="mt-4 p-3 bg-emerald-700 text-white rounded-xl flex items-center gap-2 text-xs font-bold shadow-sm">
+            <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />
+            <span>{saveAllStatusMsg}</span>
+          </div>
+        )}
       </div>
 
       {/* Direct Quick Upload Box for the Free Catalog */}
@@ -736,17 +831,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   Listado de Productos en Catálogo ({filteredProducts.length})
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Haz clic en la foto o en el botón <strong>Foto</strong> para cambiar la imagen de cualquier producto, o en el precio para editarlo.
+                  Cambia la foto o el precio y presiona <strong>Guardar</strong> (también cuenta con guardado automático instantáneo en todos los celulares y páginas).
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={onOpenAddProduct}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Agregar Nuevo Artículo</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleGlobalSaveAllClick()}
+                  disabled={isSavingAllNow}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5"
+                >
+                  <Save className="w-4 h-4 text-amber-300" />
+                  <span>Guardar Todo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenAddProduct}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Agregar Nuevo Artículo</span>
+                </button>
+              </div>
             </div>
 
             {filteredProducts.length > 0 ? (
@@ -759,122 +865,127 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <th className="py-3 px-4">Precio (MXN)</th>
                       <th className="py-3 px-4">Tamaño</th>
                       <th className="py-3 px-4">Categoría</th>
-                      <th className="py-3 px-4 text-right">Acciones</th>
+                      <th className="py-3 px-4 text-right">Apartado de Guardar</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredProducts.map((prod) => (
-                      <tr key={prod.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => handleTriggerProductPhotoUpload(prod)}
-                            className="relative group/thumb w-11 h-11 rounded-lg bg-slate-50 border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center"
-                            title="Haz clic para cambiar la foto de este producto"
-                          >
-                            <img
-                              src={prod.image}
-                              alt={prod.name}
-                              className="w-full h-full object-contain"
-                            />
-                            <span className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
-                              <Camera className="w-4 h-4 text-white" />
-                            </span>
-                          </button>
-                          <div>
-                            <span>{prod.name}</span>
-                            {prod.isStarProduct && (
-                              <span className="ml-2 text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded">
-                                Estrella
+                    {filteredProducts.map((prod) => {
+                      const currentDraftPrice = rowPriceDrafts[prod.id] ?? String(prod.price);
+                      const isRowJustSaved = savedProductRowId === prod.id;
+
+                      return (
+                        <tr key={prod.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => handleTriggerProductPhotoUpload(prod)}
+                              className="relative group/thumb w-11 h-11 rounded-lg bg-slate-50 border border-slate-200 shrink-0 overflow-hidden flex items-center justify-center"
+                              title="Haz clic para cambiar la foto de este producto"
+                            >
+                              <img
+                                src={prod.image}
+                                alt={prod.name}
+                                className="w-full h-full object-contain"
+                              />
+                              <span className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
+                                <Camera className="w-4 h-4 text-white" />
                               </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-800">{prod.clave}</td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-emerald-800">
-                          {editingProductId === prod.id ? (
+                            </button>
+                            <div>
+                              <span>{prod.name}</span>
+                              {prod.isStarProduct && (
+                                <span className="ml-2 text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded">
+                                  Estrella
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono font-bold text-slate-800">{prod.clave}</td>
+                          <td className="py-3.5 px-4 font-mono font-bold text-emerald-800">
                             <div className="flex items-center gap-1">
+                              <span className="text-slate-500">$</span>
                               <input
                                 type="number"
                                 step="0.01"
-                                value={editingPrice}
-                                onChange={(e) => setEditingPrice(e.target.value)}
+                                value={currentDraftPrice}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setRowPriceDrafts((prev) => ({ ...prev, [prod.id]: val }));
+                                  setEditingProductId(prod.id);
+                                  setEditingPrice(val);
+                                }}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     e.preventDefault();
                                     handleSavePrice(prod);
-                                  } else if (e.key === 'Escape') {
-                                    setEditingProductId(null);
                                   }
                                 }}
-                                onBlur={() => handleSavePrice(prod)}
-                                className="w-20 px-1.5 py-0.5 border-2 border-emerald-500 rounded text-xs focus:outline-none"
-                                autoFocus
+                                onBlur={() => {
+                                  if (
+                                    rowPriceDrafts[prod.id] !== undefined &&
+                                    parseFloat(rowPriceDrafts[prod.id]) !== prod.price
+                                  ) {
+                                    handleSavePrice(prod);
+                                  }
+                                }}
+                                className="w-20 px-2 py-1 border border-emerald-300 focus:border-emerald-600 rounded-lg text-xs font-bold bg-white text-slate-900 focus:outline-none"
                               />
+                              <span className="text-[10px] text-slate-500">MXN</span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4">{prod.size}</td>
+                          <td className="py-3.5 px-4 font-medium">{prod.category}</td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="inline-flex items-center gap-1.5 justify-end">
                               <button
                                 type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  handleSavePrice(prod);
-                                }}
-                                className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold"
+                                onClick={() => handleTriggerProductPhotoUpload(prod)}
+                                disabled={uploadingPhotoProductId === prod.id}
+                                className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg font-bold text-[11px] inline-flex items-center gap-1"
+                                title="Subir o cambiar foto del producto"
                               >
-                                OK
+                                {uploadingPhotoProductId === prod.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                                ) : (
+                                  <Camera className="w-3.5 h-3.5 text-emerald-700" />
+                                )}
+                                <span>Foto</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSavePrice(prod)}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-[11px] inline-flex items-center gap-1 shadow-2xs transition-all ${
+                                  isRowJustSaved
+                                    ? 'bg-emerald-800 text-amber-300'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                }`}
+                                title="Guardar cambios de este producto en todos los celulares y páginas"
+                              >
+                                {isRowJustSaved ? (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-300" />
+                                    <span>¡Guardado!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Save className="w-3.5 h-3.5" />
+                                    <span>Guardar</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDeleteProduct(prod.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"
+                                title="Borrar artículo"
+                              >
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditPrice(prod)}
-                              className="hover:underline flex items-center gap-1 group/price"
-                              title="Haz clic para editar precio"
-                            >
-                              <span>${prod.price} MXN</span>
-                              <span className="opacity-70 group-hover/price:opacity-100 text-[10px] text-emerald-600">
-                                ✎
-                              </span>
-                            </button>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4">{prod.size}</td>
-                        <td className="py-3.5 px-4 font-medium">{prod.category}</td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="inline-flex items-center gap-1.5 justify-end">
-                            <button
-                              type="button"
-                              onClick={() => handleTriggerProductPhotoUpload(prod)}
-                              disabled={uploadingPhotoProductId === prod.id}
-                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg font-bold text-[11px] inline-flex items-center gap-1"
-                              title="Subir o cambiar foto del producto"
-                            >
-                              {uploadingPhotoProductId === prod.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                              ) : (
-                                <Camera className="w-3.5 h-3.5 text-emerald-700" />
-                              )}
-                              <span>Foto</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditPrice(prod)}
-                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg font-bold text-[11px] inline-flex items-center gap-1"
-                              title="Editar precio"
-                            >
-                              <Edit3 className="w-3.5 h-3.5 text-amber-700" />
-                              <span>Precio</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onDeleteProduct(prod.id)}
-                              className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"
-                              title="Borrar artículo"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
